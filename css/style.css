@@ -1,0 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+
+body { font-family: 'Noto Sans KR', sans-serif; overflow: hidden; }
+.cursor-crosshair { cursor: crosshair; }
+.cursor-move { cursor: move; }
+.cursor-default { cursor: default; }
+.cursor-text-drag { cursor: grab; }
+.cursor-rotate { cursor: alias; }
+
+@media print {
+    .no-print { display: none !important; }
+    .print-area { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: white; }
+    body { overflow: visible; }
+}
+
+.tool-btn.active {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border-color: #3b82f6;
+    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+}
