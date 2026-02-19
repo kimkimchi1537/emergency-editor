@@ -9,8 +9,6 @@
     <link rel="stylesheet" href="./css/style.css">
 </head>
 <body class="bg-gray-100 text-gray-800 h-screen flex flex-col">
-
-    <!-- Top Toolbar -->
     <div class="bg-white border-b px-4 py-3 flex items-center justify-between shadow-sm z-20 no-print">
         <div class="flex items-center space-x-4">
             <div class="bg-red-600 text-white px-3 py-1 font-bold rounded text-lg shadow flex items-center gap-2">
@@ -23,7 +21,6 @@
                 <span class="text-sm text-gray-500 pr-2">층</span>
             </div>
         </div>
-
         <div class="flex items-center space-x-4">
             <div class="flex items-center space-x-2 bg-blue-50 px-3 py-1 rounded-lg border border-blue-100">
                 <input type="file" id="file-upload" accept="image/*" hidden>
@@ -53,7 +50,6 @@
             </button>
         </div>
     </div>
-
     <div class="flex flex-1 overflow-hidden">
         <div class="w-20 bg-white border-r flex flex-col items-center py-4 space-y-4 shadow-sm z-10 overflow-y-auto no-print">
             <button class="tool-btn active flex flex-col items-center justify-center w-14 h-14 rounded-lg border border-transparent transition-all hover:bg-gray-50" data-mode="select">
@@ -94,7 +90,6 @@
                 Drag: 다중 선택<br>Ctrl: 15도 스냅
             </div>
         </div>
-
         <div class="flex-1 bg-gray-200 overflow-auto p-8 flex justify-center relative" id="workspace">
             <div id="paper-container" class="bg-white shadow-2xl relative transition-all duration-300 print-area origin-top-left">
                 <svg id="main-svg" xmlns="http://www.w3.org/2000/svg" class="w-full h-full cursor-default select-none">
@@ -113,7 +108,6 @@
                     <rect id="bg-color" width="100%" height="100%" fill="#FFFACD"></rect>
                     <image id="bg-image-el" x="0" y="0" width="100%" height="100%" preserveAspectRatio="none" style="display:none;"></image>
                     <rect id="grid-layer" width="100%" height="100%" fill="url(#grid-pattern-major)" opacity="0.5" pointer-events="none"></rect>
-                    
                     <g id="header-group">
                         <rect x="0" y="0" width="100%" height="60" fill="#CC0000"></rect>
                         <text x="30" y="40" fill="white" font-size="32" font-weight="bold" font-family="sans-serif">피난안내도 <tspan font-size="20" font-weight="normal">EVACUATION DIAGRAM</tspan></text>
@@ -134,12 +128,10 @@
                         <g transform="translate(20, 460)"><circle cx="15" cy="15" r="15" fill="#f3f4f6"></circle><text x="15" y="20" text-anchor="middle" font-weight="bold">2</text><text x="40" y="15" font-weight="bold" font-size="14">호스 향하기</text><text x="40" y="28" font-size="10" fill="gray">Aim Base</text></g>
                         <g transform="translate(20, 520)"><circle cx="15" cy="15" r="15" fill="#f3f4f6"></circle><text x="15" y="20" text-anchor="middle" font-weight="bold">3</text><text x="40" y="15" font-weight="bold" font-size="14">손잡이 누르기</text><text x="40" y="28" font-size="10" fill="gray">Squeeze</text></g>
                     </g>
-                    
                     <g id="merged-wall-layer"></g> 
                     <g id="elements-layer"></g>    
                     <g id="ui-layer"></g>
                     <g id="temp-layer"></g>
-                    
                     <g id="legend-group">
                         <rect width="100%" height="50" fill="white" stroke-width="0"></rect>
                         <line x1="0" y1="0" x2="100%" y2="0" stroke="#ccc"></line>
@@ -152,8 +144,6 @@
             <div id="snapped-pos-info" class="absolute bottom-4 left-24 px-2 py-1 bg-white border rounded text-[10px] text-blue-600 font-bold pointer-events-none no-print">X: 0, Y: 0</div>
         </div>
     </div>
-
-    <!-- 모듈 로드 -->
     <script type="module" src="./js/main.js"></script>
 </body>
 </html>

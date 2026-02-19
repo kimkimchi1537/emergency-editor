@@ -1,11 +1,8 @@
 import { EvacuationEditor } from './Editor.js';
 
-// DOM 로드 완료 후 실행
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("[LOG] js/main.js: DOMContentLoaded 이벤트 발생");
     const editor = new EvacuationEditor();
-    
-    // 전역 변수로 노출 (디버깅 용)
     window.editor = editor;
-    
-    console.log("Evacuation Editor Initialized");
+    console.log("[LOG] js/main.js: Evacuation Editor 초기화 성공");
 });
