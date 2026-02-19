@@ -7,7 +7,7 @@ export class DimensionLayout {
         const dy = p2.y - p1.y;
         const len = Math.sqrt(dx * dx + dy * dy);
         
-        if (len < 0.1) return { x: 0, y: 0, anchor: 'middle', baseline: 'middle' };
+        if (len < 0.1) return { x: 0, y: 0, anchor: 'middle', baseline: 'middle', leaderStart: { x: p1.x, y: p1.y } };
 
         const wallWidth = CONSTANTS.STYLES.wall.width || 6;
         const totalOffset = (wallWidth / 2) + margin;
@@ -31,7 +31,8 @@ export class DimensionLayout {
             x: (p1.x + p2.x) / 2 + offsetX,
             y: (p1.y + p2.y) / 2 + offsetY,
             anchor: anchor,
-            baseline: baseline
+            baseline: baseline,
+            leaderStart: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 }
         };
     }
 

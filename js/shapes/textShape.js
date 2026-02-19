@@ -1,4 +1,4 @@
-import { ShapeRenderer } from './index.js';
+import { ShapeRenderer } from './ShapeRenderer.js';
 import { createSVG } from '../utils.js';
 
 export class TextShape extends ShapeRenderer {
@@ -20,10 +20,15 @@ export class TextShape extends ShapeRenderer {
         return null; 
     }
 
+    getDimensionLayout() {
+        console.log(`[LOG] js/shapes/textShape.js: getDimensionLayout 호출`);
+        return null;
+    }
+
     createHighlight() { 
         console.log(`[LOG] js/shapes/textShape.js: createHighlight 호출 (ID: ${this.data.id})`);
         const g = createSVG("g", { "pointer-events": "none" });
-        const estimatedWidth = this.data.text.length * (this.data.fontSize * 0.6);
+        const estimatedWidth = (this.data.text || "").length * (this.data.fontSize * 0.6);
         const padding = 4;
         const box = createSVG("rect", {
             x: -padding,
