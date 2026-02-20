@@ -51,13 +51,48 @@ export class CircleShape extends BaseShape {
         this.element.setAttribute('ry', ry);
     }
 
-    // --- 객체지향 위임: CircleShape 고유의 속성 갱신 로직 ---
+    resize(handleIndex, newX, newY, isShift = false) {
+        if (handleIndex === 0) {
+            this.points[0].y = newY;
+            this.points[1].y = newY;
+            console.log(`[METHOD resize] CircleShape 상단 핸들(0) 조작 | y=${newY.toFixed(1)}`);
+        } else if (handleIndex === 1) {
+            this.points[1].x = newX;
+            this.points[2].x = newX;
+            console.log(`[METHOD resize] CircleShape 우측 핸들(1) 조작 | x=${newX.toFixed(1)}`);
+        } else if (handleIndex === 2) {
+            this.points[2].y = newY;
+            this.points[3].y = newY;
+            console.log(`[METHOD resize] CircleShape 하단 핸들(2) 조작 | y=${newY.toFixed(1)}`);
+        } else if (handleIndex === 3) {
+            this.points[0].x = newX;
+            this.points[3].x = newX;
+            console.log(`[METHOD resize] CircleShape 좌측 핸들(3) 조작 | x=${newX.toFixed(1)}`);
+        }
+        
+        this.updateAttributes();
+        
+        const cx = (this.points[0].x + this.points[2].x) / 2;
+        const cy = (this.points[0].y + this.points[2].y) / 2;
+        const currentTransform = this.element.getAttribute('transform') || '';
+        const match = currentTransform.match(/rotate\(([-\d.]+)/);
+        if (match) {
+            const angle = match[1];
+            this.element.setAttribute('transform', `rotate(${angle}, ${cx}, ${cy})`);
+        }
+    }
+
     updateAttributes() {
         const cx = (this.points[0].x + this.points[2].x) / 2;
         const cy = (this.points[0].y + this.points[2].y) / 2;
+        const rx = Math.abs(this.points[2].x - this.points[0].x) / 2;
+        const ry = Math.abs(this.points[2].y - this.points[0].y) / 2;
+        
         this.element.setAttribute('cx', cx);
         this.element.setAttribute('cy', cy);
-        console.log(`[METHOD updateAttributes] CircleShape 중심점(cx, cy) 동기화 완료`);
+        this.element.setAttribute('rx', rx);
+        this.element.setAttribute('ry', ry);
+        console.log(`[METHOD updateAttributes] CircleShape 물리적 렌더링 동기화 완료`);
     }
 
     containsPoint(px, py) {

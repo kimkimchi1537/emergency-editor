@@ -46,13 +46,48 @@ export class RectShape extends BaseShape {
         this.element.setAttribute('height', maxY - minY);
     }
 
-    // --- 객체지향 위임: RectShape 고유의 속성 갱신 로직 ---
+    resize(handleIndex, newX, newY, isShift = false) {
+        if (handleIndex === 0) {
+            this.points[0].x = newX; this.points[0].y = newY;
+            this.points[1].y = newY; this.points[3].x = newX;
+            console.log(`[METHOD resize] RectShape 롤백 완료: 좌상단 꼭짓점 핸들(0) 조작 | x=${newX.toFixed(1)}, y=${newY.toFixed(1)}`);
+        } else if (handleIndex === 1) {
+            this.points[1].x = newX; this.points[1].y = newY;
+            this.points[0].y = newY; this.points[2].x = newX;
+            console.log(`[METHOD resize] RectShape 롤백 완료: 우상단 꼭짓점 핸들(1) 조작 | x=${newX.toFixed(1)}, y=${newY.toFixed(1)}`);
+        } else if (handleIndex === 2) {
+            this.points[2].x = newX; this.points[2].y = newY;
+            this.points[1].x = newX; this.points[3].y = newY;
+            console.log(`[METHOD resize] RectShape 롤백 완료: 우하단 꼭짓점 핸들(2) 조작 | x=${newX.toFixed(1)}, y=${newY.toFixed(1)}`);
+        } else if (handleIndex === 3) {
+            this.points[3].x = newX; this.points[3].y = newY;
+            this.points[0].x = newX; this.points[2].y = newY;
+            console.log(`[METHOD resize] RectShape 롤백 완료: 좌하단 꼭짓점 핸들(3) 조작 | x=${newX.toFixed(1)}, y=${newY.toFixed(1)}`);
+        }
+        
+        this.updateAttributes();
+        
+        const cx = (this.points[0].x + this.points[2].x) / 2;
+        const cy = (this.points[0].y + this.points[2].y) / 2;
+        const currentTransform = this.element.getAttribute('transform') || '';
+        const match = currentTransform.match(/rotate\(([-\d.]+)/);
+        if (match) {
+            const angle = match[1];
+            this.element.setAttribute('transform', `rotate(${angle}, ${cx}, ${cy})`);
+        }
+    }
+
     updateAttributes() {
         const minX = Math.min(this.points[0].x, this.points[2].x);
+        const maxX = Math.max(this.points[0].x, this.points[2].x);
         const minY = Math.min(this.points[0].y, this.points[2].y);
+        const maxY = Math.max(this.points[0].y, this.points[2].y);
+        
         this.element.setAttribute('x', minX);
         this.element.setAttribute('y', minY);
-        console.log(`[METHOD updateAttributes] RectShape 좌상단 원점(x, y) 동기화 완료`);
+        this.element.setAttribute('width', maxX - minX);
+        this.element.setAttribute('height', maxY - minY);
+        console.log(`[METHOD updateAttributes] RectShape 물리적 렌더링 동기화 완료`);
     }
 
     containsPoint(px, py) {

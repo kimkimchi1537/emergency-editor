@@ -2,6 +2,7 @@ export class BaseTool {
     constructor(state, workspace) {
         this.state = state;
         this.workspace = workspace;
+        this.lastMousePos = null;
         console.log(`[CLASS BaseTool] 도구 기본 인스턴스 초기화 | 상태 및 워크스페이스 참조 저장`);
     }
 
@@ -25,15 +26,18 @@ export class BaseTool {
         console.log(`[METHOD handleKeyDown] 기본 도구 - 키 입력 무시됨: ${e.key}`);
         return false;
     }
+
+    handleKeyUp(e) {
+        console.log(`[METHOD handleKeyUp] 기본 도구 - 키 뗌 무시됨: ${e.key}`);
+        return false;
+    }
     
     onWheel(e) {
         console.log(`[METHOD onWheel] 기본 도구 - 휠 이벤트 무시됨 (ZoomManager로 위임)`);
-        return false; // 이벤트를 소비하지 않고 넘김
+        return false;
     }
 
     getMousePosition(e) {
-        // SVG 네이티브 CTM(Coordinate Transformation Matrix)을 사용하여 
-        // 화면 배율(Zoom) 및 스크롤 위치와 무관하게 완벽한 SVG 내부 논리 좌표 역산
         const pt = this.workspace.createSVGPoint();
         pt.x = e.clientX;
         pt.y = e.clientY;

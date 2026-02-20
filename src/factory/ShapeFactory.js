@@ -1,12 +1,14 @@
 import { LineShape } from '../shapes/LineShape.js';
 import { RectShape } from '../shapes/RectShape.js';
 import { CircleShape } from '../shapes/CircleShape.js';
+import { MultiLineShape } from '../shapes/MultiLineShape.js';
 
 export class ShapeFactory {
     static registry = {
         line: LineShape,
         rect: RectShape,
-        circle: CircleShape
+        circle: CircleShape,
+        multiline: MultiLineShape
     };
 
     static createShape(type, id, startX, startY, strokeWidth) {

@@ -7,6 +7,8 @@ export class SelectTool extends BaseTool {
         this.isMarquee = false;
         this.isRotating = false;
         this.isMoving = false;
+        this.isResizing = false;
+        this.resizeHandleIndex = -1;
         this.marqueeStart = { x: 0, y: 0 };
         this.moveStart = { x: 0, y: 0 };
         this.marqueeElement = null;
@@ -21,10 +23,20 @@ export class SelectTool extends BaseTool {
     onMouseDown(e) {
         const pos = this.getMousePosition(e);
         const isShift = e.shiftKey;
+        this.lastMousePos = pos;
         
+        if (this.state.selectedShapes.length === 1 && e.target.classList.contains('resize-handle')) {
+            const index = parseInt(e.target.getAttribute('data-index'), 10);
+            console.log(`[SELECT-TOOL] 리사이즈 핸들 포착 | Index: ${index}`);
+            HistoryManager.getInstance(this.state, this.workspace).saveState();
+            this.isResizing = true;
+            this.resizeHandleIndex = index;
+            return;
+        }
+
         if (this.state.selectedShapes.length > 0 && e.target.classList.contains('rotate-handle')) {
             console.log(`[SELECT-TOOL] 회전 핸들 포착 - 회전 프로세스 진입`);
-            HistoryManager.getInstance(this.state, this.workspace).saveState(); // [HISTORY] 회전 시작 전 스냅샷
+            HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isRotating = true;
             this.prepareRotation(pos);
             return;
@@ -32,7 +44,7 @@ export class SelectTool extends BaseTool {
 
         if (this.state.selectedShapes.length > 0 && this.isPointInSelectionBox(pos)) {
             console.log(`[SELECT-TOOL] 선택 영역(Box) 내부 클릭 감지 - 이동 모드 진입`);
-            HistoryManager.getInstance(this.state, this.workspace).saveState(); // [HISTORY] 이동 시작 전 스냅샷
+            HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isMoving = true;
             this.moveStart = pos;
             return;
@@ -51,7 +63,7 @@ export class SelectTool extends BaseTool {
             
             if (this.state.selectedShapes.includes(clickedShape) && !isShift) {
                 console.log(`[SELECT-TOOL] 이미 선택된 도형 드래그 - 이동 모드 진입`);
-                HistoryManager.getInstance(this.state, this.workspace).saveState(); // [HISTORY] 이동 시작 전 스냅샷
+                HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.isMoving = true;
                 this.moveStart = pos;
                 return;
@@ -82,6 +94,12 @@ export class SelectTool extends BaseTool {
 
     onMouseMove(e) {
         const pos = this.getMousePosition(e);
+        this.lastMousePos = pos;
+
+        if (this.isResizing) {
+            this.applyResize(pos, e.shiftKey);
+            return;
+        }
 
         if (this.isRotating) {
             this.applyRotation(pos, e.shiftKey);
@@ -103,7 +121,10 @@ export class SelectTool extends BaseTool {
                 this.workspace.style.cursor = 'grab';
                 return;
             }
-
+            if (e.target.classList.contains('resize-handle')) {
+                this.workspace.style.cursor = 'crosshair';
+                return;
+            }
             if (this.isPointInSelectionBox(pos)) {
                 if (this.workspace.style.cursor !== 'move') {
                     this.workspace.style.cursor = 'move';
@@ -123,6 +144,13 @@ export class SelectTool extends BaseTool {
     }
 
     onMouseUp(e) {
+        if (this.isResizing) {
+            console.log(`[SELECT-TOOL] 리사이즈 종료`);
+            this.isResizing = false;
+            this.resizeHandleIndex = -1;
+            this.syncFinalTransforms();
+        }
+
         if (this.isRotating) {
             console.log(`[SELECT-TOOL] 회전 종료`);
             this.isRotating = false;
@@ -227,6 +255,27 @@ export class SelectTool extends BaseTool {
         this.renderSelectionUI();
     }
 
+    applyResize(pos, isShift) {
+        const shape = this.state.selectedShapes[0];
+        const transform = shape.element.getAttribute('transform') || '';
+        let localPos = { x: pos.x, y: pos.y };
+        
+        const match = transform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+        if (match) {
+            const angleDeg = parseFloat(match[1]);
+            const cx = parseFloat(match[2]);
+            const cy = parseFloat(match[3]);
+            const angleRad = -angleDeg * (Math.PI / 180);
+            const dx = pos.x - cx;
+            const dy = pos.y - cy;
+            localPos.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+            localPos.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+        }
+        
+        shape.resize(this.resizeHandleIndex, localPos.x, localPos.y, isShift);
+        this.renderSelectionUI();
+    }
+
     syncFinalTransforms() {
         this.state.selectedShapes.forEach(shape => {
             const currentTransform = shape.element.getAttribute('transform') || '';
@@ -298,6 +347,49 @@ export class SelectTool extends BaseTool {
         handleLine.setAttribute('stroke', '#0066cc');
         handleLine.style.pointerEvents = 'none';
         this.selectionOverlay.appendChild(handleLine);
+
+        if (this.state.selectedShapes.length === 1) {
+            const shape = this.state.selectedShapes[0];
+            const drawHandle = (x, y, index) => {
+                const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                handle.setAttribute('class', 'resize-handle');
+                handle.setAttribute('data-index', index);
+                handle.setAttribute('x', x - 4);
+                handle.setAttribute('y', y - 4);
+                handle.setAttribute('width', 8);
+                handle.setAttribute('height', 8);
+                handle.setAttribute('fill', '#fff');
+                handle.setAttribute('stroke', '#0066cc');
+                handle.setAttribute('stroke-width', 1.5);
+                handle.style.cursor = 'crosshair';
+                handle.style.pointerEvents = 'auto';
+                this.selectionOverlay.appendChild(handle);
+            };
+
+            if (shape.type === 'line') {
+                const p1 = shape.points[0];
+                const p2 = shape.points[1];
+                const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                drawHandle(0, 0, 0);
+                drawHandle(length, 0, 1);
+            } else if (shape.type === 'multiline') {
+                shape.points.forEach((p, i) => {
+                    drawHandle(p.x, p.y, i);
+                });
+            } else if (shape.type === 'rect') {
+                console.log(`[SELECT-TOOL] 사각형 꼭짓점 렌더링 정상화 완료`);
+                drawHandle(box.minX, box.minY, 0);
+                drawHandle(box.minX + box.width, box.minY, 1);
+                drawHandle(box.minX + box.width, box.minY + box.height, 2);
+                drawHandle(box.minX, box.minY + box.height, 3);
+            } else if (shape.type === 'circle') {
+                console.log(`[SELECT-TOOL] 원형 중앙 엣지 핸들 렌더링 유지 완료`);
+                drawHandle(box.minX + box.width / 2, box.minY, 0);
+                drawHandle(box.minX + box.width, box.minY + box.height / 2, 1);
+                drawHandle(box.minX + box.width / 2, box.minY + box.height, 2);
+                drawHandle(box.minX, box.minY + box.height / 2, 3);
+            }
+        }
 
         const rotateHandleGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
         rotateHandleGroup.setAttribute('class', 'rotate-handle');
@@ -371,19 +463,36 @@ export class SelectTool extends BaseTool {
 
     endMarquee() {
         if (!this.marqueeElement) return;
+
+        const widthAttr = this.marqueeElement.getAttribute('width');
+        const heightAttr = this.marqueeElement.getAttribute('height');
+
+        if (!widthAttr || !heightAttr || parseFloat(widthAttr) === 0 || parseFloat(heightAttr) === 0) {
+            console.log(`[SELECT-TOOL] Marquee 드래그 없음 (제자리 클릭) - 다중 선택 로직 취소됨`);
+            this.workspace.removeChild(this.marqueeElement);
+            this.marqueeElement = null;
+            this.isMarquee = false;
+            return;
+        }
+
         const x = parseFloat(this.marqueeElement.getAttribute('x'));
         const y = parseFloat(this.marqueeElement.getAttribute('y'));
-        const width = parseFloat(this.marqueeElement.getAttribute('width'));
-        const height = parseFloat(this.marqueeElement.getAttribute('height'));
+        const width = parseFloat(widthAttr);
+        const height = parseFloat(heightAttr);
         const marqueeBox = { minX: x, minY: y, maxX: x + width, maxY: y + height };
+        
+        console.log(`[SELECT-TOOL] Marquee 영역 확정 | 좌표: (${marqueeBox.minX.toFixed(1)}, ${marqueeBox.minY.toFixed(1)}) ~ (${marqueeBox.maxX.toFixed(1)}, ${marqueeBox.maxY.toFixed(1)})`);
+
         this.state.shapes.forEach(shape => {
             if (this.isShapeInBox(shape, marqueeBox)) {
                 if (!this.state.selectedShapes.includes(shape)) {
+                    console.log(`[SELECT-TOOL] Marquee 영역 내 도형 포착 | ID: ${shape.id}`);
                     this.state.selectedShapes.push(shape);
                     shape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
                 }
             }
         });
+        
         this.workspace.removeChild(this.marqueeElement);
         this.marqueeElement = null;
         this.isMarquee = false;
@@ -404,9 +513,37 @@ export class SelectTool extends BaseTool {
         const key = e.key.toLowerCase();
         if (key === 'delete' || key === 'backspace') {
             if (this.state.selectedShapes.length > 0) {
-                HistoryManager.getInstance(this.state, this.workspace).saveState(); // [HISTORY] 삭제 전 스냅샷
+                HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.deleteSelectedShapes();
                 this.renderSelectionUI();
+                return true;
+            }
+        }
+        if (e.key === 'Shift' && this.lastMousePos) {
+            if (this.isResizing) {
+                console.log(`[SELECT-TOOL] Shift 눌림 - 실시간 리사이즈 스냅 갱신`);
+                this.applyResize(this.lastMousePos, true);
+                return true;
+            }
+            if (this.isRotating) {
+                console.log(`[SELECT-TOOL] Shift 눌림 - 실시간 회전 스냅 갱신`);
+                this.applyRotation(this.lastMousePos, true);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    handleKeyUp(e) {
+        if (e.key === 'Shift' && this.lastMousePos) {
+            if (this.isResizing) {
+                console.log(`[SELECT-TOOL] Shift 뗌 - 실시간 리사이즈 스냅 해제`);
+                this.applyResize(this.lastMousePos, false);
+                return true;
+            }
+            if (this.isRotating) {
+                console.log(`[SELECT-TOOL] Shift 뗌 - 실시간 회전 스냅 해제`);
+                this.applyRotation(this.lastMousePos, false);
                 return true;
             }
         }

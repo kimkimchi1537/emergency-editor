@@ -2,6 +2,7 @@ import { ShortcutManager } from './managers/ShortcutManager.js';
 import { ZoomManager } from './managers/ZoomManager.js';
 import { DrawTool } from './tools/DrawTool.js';
 import { SelectTool } from './tools/SelectTool.js';
+import { MultiLineTool } from './tools/MultiLineTool.js';
 
 console.log("[SYSTEM] Main Entry 진입 - 유연한 단축키 바인딩 시스템 및 다중 선택 상태 적용");
 
@@ -39,7 +40,8 @@ const customHeightInput = document.getElementById('custom-height');
 
 const tools = {
     'select': new SelectTool(state, workspace),
-    'draw': new DrawTool(state, workspace, shapeIdCounter)
+    'draw': new DrawTool(state, workspace, shapeIdCounter),
+    'multiline': new MultiLineTool(state, workspace, shapeIdCounter)
 };
 
 function setTool(toolId) {
@@ -61,6 +63,9 @@ function setTool(toolId) {
     if (toolId === 'select') {
         state.activeTool = tools['select'];
         workspace.style.cursor = 'default';
+    } else if (toolId === 'multiline') {
+        state.activeTool = tools['multiline'];
+        workspace.style.cursor = 'crosshair';
     } else {
         state.activeTool = tools['draw'];
         workspace.style.cursor = 'crosshair';
@@ -86,17 +91,15 @@ shortcutManager.register('s', () => setTool('select'));
 shortcutManager.register('l', () => setTool('line'));
 shortcutManager.register('r', () => setTool('rect'));
 shortcutManager.register('c', () => setTool('circle'));
+shortcutManager.register('p', () => setTool('multiline'));
 
-// ZoomManager 초기화 및 휠 이벤트 등록
 const zoomManager = ZoomManager.getInstance(workspaceContainer, workspace);
 
 workspaceContainer.addEventListener('wheel', (e) => {
-    // 1. 활성화된 도구(Tool)에게 휠 이벤트를 먼저 던짐 (도구별 커스텀 휠 동작 지원)
     if (state.activeTool && typeof state.activeTool.onWheel === 'function') {
         const handled = state.activeTool.onWheel(e);
-        if (handled) return; // 도구가 이벤트를 소비했다면 종료
+        if (handled) return;
     }
-    // 2. 도구가 처리하지 않은 경우에만 ZoomManager가 확대/축소 수행
     zoomManager.handleWheel(e);
 }, { passive: false });
 
@@ -116,10 +119,8 @@ function updateCanvasSize() {
         height = rect.height > 0 ? rect.height - 80 : 600;
     }
 
-    // 논리적 좌표계(viewBox) 고정
     workspace.setAttribute('viewBox', `0 0 ${width} ${height}`);
     
-    // 초기 물리적 크기 할당 (이후 ZoomManager가 배율에 맞게 제어함)
     workspace.setAttribute('width', width);
     workspace.setAttribute('height', height);
     
@@ -138,7 +139,6 @@ sizePresetSelect.addEventListener('change', (e) => {
     
     updateCanvasSize();
     
-    // 용지 크기 변경 후 화면에 맞춤 (레이아웃 렌더링 후 계산하기 위해 짧은 지연)
     setTimeout(() => {
         zoomManager.fitToScreen();
     }, 50);
@@ -153,7 +153,6 @@ sizePresetSelect.addEventListener('change', (e) => {
     });
 });
 
-// 초기 화면 로드시 & 브라우저 창 크기가 변할 때마다 맞춤 실행
 window.addEventListener('load', () => {
     zoomManager.fitToScreen();
 });
@@ -179,7 +178,7 @@ strokeWidthInput.addEventListener('change', (e) => {
 
 workspace.addEventListener('mousedown', (e) => {
     if (state.activeTool) {
-        console.log(`[EVENT mousedown] 워크스페이스 클릭 감지 -> 도구 전달`);
+        console.log(`[EVENT mousedown] 워크스페이스 클릭 감지 -> 도구 전달 | 버튼: ${e.button}`);
         state.activeTool.onMouseDown(e);
     }
 });
@@ -197,10 +196,14 @@ workspace.addEventListener('mouseup', (e) => {
     }
 });
 
+workspace.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    console.log(`[EVENT contextmenu] 우클릭 감지 - 브라우저 기본 메뉴 차단`);
+});
+
 document.getElementById('btn-export-svg').addEventListener('click', () => {
     console.log("[EXPORT] SVG 형식 데이터 직렬화 및 다운로드 시작");
     
-    // 내보내기 시 논리 크기(viewBox)를 기준으로 강제 복원하여 해상도 유지
     const viewBox = workspace.getAttribute('viewBox');
     let w = 800, h = 600;
     if (viewBox) {
@@ -218,7 +221,6 @@ document.getElementById('btn-export-svg').addEventListener('click', () => {
     const serializer = new XMLSerializer();
     let source = serializer.serializeToString(workspace);
     
-    // 원래 배율 상태로 원상 복구
     workspace.setAttribute('width', oldWidth);
     workspace.setAttribute('height', oldHeight);
 
@@ -232,7 +234,6 @@ document.getElementById('btn-export-svg').addEventListener('click', () => {
 document.getElementById('btn-export-png').addEventListener('click', () => {
     console.log("[EXPORT] PNG 래스터 이미지 렌더링 및 다운로드 시작");
     
-    // 내보내기 시 논리 크기(viewBox)를 기준으로 강제 복원하여 해상도 유지
     const viewBox = workspace.getAttribute('viewBox');
     let w = 800, h = 600;
     if (viewBox) {
@@ -249,7 +250,6 @@ document.getElementById('btn-export-png').addEventListener('click', () => {
     
     const svgData = new XMLSerializer().serializeToString(workspace);
     
-    // 원래 배율 상태로 원상 복구
     workspace.setAttribute('width', oldWidth);
     workspace.setAttribute('height', oldHeight);
 

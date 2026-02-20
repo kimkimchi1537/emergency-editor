@@ -37,7 +37,13 @@ export class LineShape extends BaseShape {
         this.element.setAttribute('y2', finalY);
     }
 
-    // --- 객체지향 위임: LineShape 고유의 속성 갱신 로직 ---
+    resize(handleIndex, newX, newY, isShift = false) {
+        this.points[handleIndex].x = newX;
+        this.points[handleIndex].y = newY;
+        this.updateAttributes();
+        console.log(`[METHOD resize] LineShape 핸들 ${handleIndex} 갱신 완료 | (${newX.toFixed(1)}, ${newY.toFixed(1)})`);
+    }
+
     updateAttributes() {
         this.element.setAttribute('x1', this.points[0].x);
         this.element.setAttribute('y1', this.points[0].y);

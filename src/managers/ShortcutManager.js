@@ -11,6 +11,7 @@ export class ShortcutManager {
 
     init() {
         window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        window.addEventListener('keyup', (e) => this.handleKeyUp(e));
     }
 
     register(key, callback) {
@@ -24,9 +25,16 @@ export class ShortcutManager {
         const isCtrlOrMeta = e.ctrlKey || e.metaKey;
         const key = e.key.toLowerCase();
 
-        // --- 시스템 레벨 단축키 (Undo / Redo) ---
         if (isCtrlOrMeta && key === 'z') {
             e.preventDefault();
+            
+            if (this.state.activeTool && typeof this.state.activeTool.handleUndo === 'function') {
+                if (this.state.activeTool.handleUndo()) {
+                    console.log(`[SHORTCUT] 전역 Undo 차단 - 활성 도구의 로컬 Undo 위임 처리 완료`);
+                    return;
+                }
+            }
+            
             if (e.shiftKey) {
                 HistoryManager.getInstance(this.state, this.workspace).redo();
             } else {
@@ -43,17 +51,24 @@ export class ShortcutManager {
             return;
         }
 
-        // 등록된 전역 단축키 실행
         if (!isCtrlOrMeta && this.shortcuts[key]) {
             e.preventDefault();
             this.shortcuts[key]();
             return;
         }
 
-        // --- 도구(Tool) 레벨 단축키 위임 ---
         console.log(`[SHORTCUT] 활성 도구(${this.state.currentTool})에게 키 이벤트 위임 시도`);
         if (this.state.activeTool && typeof this.state.activeTool.handleKeyDown === 'function') {
             this.state.activeTool.handleKeyDown(e);
+        }
+    }
+
+    handleKeyUp(e) {
+        if (e.key === 'Shift') {
+            console.log(`[EVENT keyup] 시스템 레벨 Shift 뗌 감지 - 도구 위임 시도`);
+            if (this.state.activeTool && typeof this.state.activeTool.handleKeyUp === 'function') {
+                this.state.activeTool.handleKeyUp(e);
+            }
         }
     }
 
