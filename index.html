@@ -4,31 +4,81 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>피난안내도 에디터 (Modular)</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
-        body { margin: 0; display: flex; height: 100vh; background-color: #282828; color: #fff; font-family: sans-serif; overflow: hidden; }
-        #sidebar { width: 70px; background-color: #333; display: flex; flex-direction: column; align-items: center; padding-top: 15px; border-right: 1px solid #1e1e1e; }
-        .tool-btn { width: 50px; height: 50px; margin-bottom: 12px; background-color: #444; border: none; color: #ddd; cursor: pointer; border-radius: 6px; font-weight: bold; }
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #282828; color: #fff; font-family: sans-serif; overflow: hidden; }
+        
+        #header-options { height: 60px; background-color: #333; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #1e1e1e; gap: 20px; flex-shrink: 0; }
+        .option-group { display: flex; align-items: center; gap: 8px; }
+        .option-label { font-size: 13px; color: #bbb; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+        .option-label .material-icons { font-size: 18px; }
+        
+        input, select { background: #444; border: 1px solid #555; color: #fff; padding: 5px 8px; border-radius: 4px; outline: none; font-size: 13px; }
+        .btn-export { background-color: #2a9d8f; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: bold; transition: background 0.2s; }
+        .btn-export:hover { background-color: #21867a; }
+        .btn-export.png { background-color: #e67e22; }
+        .btn-export.png:hover { background-color: #d35400; }
+        
+        #main-container { flex: 1; display: flex; overflow: hidden; }
+        #sidebar { width: 70px; background-color: #333; display: flex; flex-direction: column; align-items: center; padding-top: 15px; border-right: 1px solid #1e1e1e; flex-shrink: 0; }
+        .tool-btn { width: 50px; height: 50px; margin-bottom: 12px; background-color: #444; border: none; color: #ddd; cursor: pointer; border-radius: 6px; font-weight: bold; display: flex; align-items: center; justify-content: center; }
         .tool-btn.active { background-color: #0066cc; color: #fff; }
-        #workspace-container { flex: 1; display: flex; justify-content: center; align-items: center; background-color: #1a1a1a; }
-        #workspace { background-color: #ffffff; width: 800px; height: 600px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); cursor: crosshair; }
+        
+        #workspace-container { flex: 1; display: flex; justify-content: center; align-items: center; background-color: #1a1a1a; overflow: auto; padding: 40px; }
+        #workspace { background-color: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.6); flex-shrink: 0; }
+        
+        .custom-size-inputs { display: none; align-items: center; gap: 5px; }
+        .custom-size-inputs.visible { display: flex; }
     </style>
 </head>
 <body>
-    <div id="sidebar">
-        <button class="tool-btn active" id="tool-select">선택</button>
-        <button class="tool-btn" id="tool-line">선</button>
-        <button class="tool-btn" id="tool-rect">사각</button>
-        <button class="tool-btn" id="tool-circle">원</button>
-        <button class="tool-btn" id="tool-arrow">화살</button>
+    <div id="header-options">
+        <div class="option-group">
+            <label class="option-label"><span class="material-icons">line_weight</span>굵기</label>
+            <input type="number" id="stroke-width-input" min="1" max="20" value="4">
+        </div>
+        <div class="option-group">
+            <label class="option-label"><span class="material-icons">description</span>용지</label>
+            <select id="canvas-size-preset">
+                <option value="fit">화면 맞춤</option>
+                <optgroup label="A4">
+                    <option value="A4_P">A4 세로 (210x297mm)</option>
+                    <option value="A4_L">A4 가로 (297x210mm)</option>
+                </optgroup>
+                <optgroup label="A3">
+                    <option value="A3_P">A3 세로 (297x420mm)</option>
+                    <option value="A3_L">A3 가로 (420x297mm)</option>
+                </optgroup>
+                <optgroup label="B4">
+                    <option value="B4_P">B4 세로 (257x364mm)</option>
+                    <option value="B4_L">B4 가로 (364x257mm)</option>
+                </optgroup>
+                <option value="custom">직접 입력</option>
+            </select>
+        </div>
+        <div id="custom-size-controls" class="option-group custom-size-inputs">
+            <input type="number" id="custom-width" placeholder="너비(px)" value="800">
+            <span>x</span>
+            <input type="number" id="custom-height" placeholder="높이(px)" value="600">
+        </div>
+        <div style="flex: 1;"></div>
+        <div class="option-group">
+            <button class="btn-export" id="btn-export-svg"><span class="material-icons">file_download</span>SVG</button>
+            <button class="btn-export png" id="btn-export-png"><span class="material-icons">image</span>PNG</button>
+        </div>
     </div>
-    <div id="workspace-container">
-        <svg id="workspace" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-                    <polygon points="0 0, 10 3.5, 0 7" fill="#ffca3a" />
-                </marker>
-            </defs>
-        </svg>
+    <div id="main-container">
+        <div id="sidebar">
+            <button class="tool-btn active" id="tool-select">선택</button>
+            <button class="tool-btn" id="tool-line">선</button>
+            <button class="tool-btn" id="tool-rect">사각</button>
+            <button class="tool-btn" id="tool-circle">원</button>
+        </div>
+        <div id="workspace-container">
+            <svg id="workspace" xmlns="http://www.w3.org/2000/svg">
+                <defs></defs>
+            </svg>
+        </div>
     </div>
     <script type="module" src="./src/main.js"></script>
 </body>

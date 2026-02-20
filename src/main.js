@@ -1,73 +1,278 @@
-import { ShapeFactory } from './factory/ShapeFactory.js';
+import { ShortcutManager } from './managers/ShortcutManager.js';
+import { ZoomManager } from './managers/ZoomManager.js';
+import { DrawTool } from './tools/DrawTool.js';
+import { SelectTool } from './tools/SelectTool.js';
 
-console.log("[SYSTEM] Main Entry 진입");
+console.log("[SYSTEM] Main Entry 진입 - 유연한 단축키 바인딩 시스템 및 다중 선택 상태 적용");
 
 const state = {
     currentTool: 'select',
+    currentStrokeWidth: 4,
+    currentSizePreset: 'fit',
     isDrawing: false,
     startX: 0,
     startY: 0,
     currentShape: null,
-    shapes: []
+    selectedShapes: [],
+    shapes: [],
+    activeTool: null
 };
 
-let shapeIdCounter = 0;
+const PRESETS = {
+    'A4_P': { w: 794, h: 1123 },
+    'A4_L': { w: 1123, h: 794 },
+    'A3_P': { w: 1123, h: 1587 },
+    'A3_L': { w: 1587, h: 1123 },
+    'B4_P': { w: 971, h: 1375 },
+    'B4_L': { w: 1375, h: 971 }
+};
+
+let shapeIdCounter = { value: 0 };
 const workspace = document.getElementById('workspace');
 const sidebar = document.getElementById('sidebar');
+const workspaceContainer = document.getElementById('workspace-container');
+const strokeWidthInput = document.getElementById('stroke-width-input');
+const sizePresetSelect = document.getElementById('canvas-size-preset');
+const customSizeControls = document.getElementById('custom-size-controls');
+const customWidthInput = document.getElementById('custom-width');
+const customHeightInput = document.getElementById('custom-height');
+
+const tools = {
+    'select': new SelectTool(state, workspace),
+    'draw': new DrawTool(state, workspace, shapeIdCounter)
+};
+
+function setTool(toolId) {
+    console.log(`[SYSTEM] 도구 변경 프로세스 시작: ${state.currentTool} -> ${toolId}`);
+    
+    if (state.activeTool) {
+        state.activeTool.onDeactivate();
+    }
+
+    state.currentTool = toolId;
+    
+    document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+    const activeBtn = document.getElementById(`tool-${toolId}`);
+    if (activeBtn) {
+        activeBtn.classList.add('active');
+        console.log(`[UI] 사이드바 버튼 활성 상태 동기화: tool-${toolId}`);
+    }
+
+    if (toolId === 'select') {
+        state.activeTool = tools['select'];
+        workspace.style.cursor = 'default';
+    } else {
+        state.activeTool = tools['draw'];
+        workspace.style.cursor = 'crosshair';
+    }
+    
+    console.log(`[SYSTEM] 현재 활성 도구 인스턴스: ${state.activeTool.constructor.name}`);
+}
+
+const showDebugData = () => {
+    console.log("[DEBUG-ACTION] 캔버스 내부 데이터 무결성 검사 및 로그 출력");
+    const data = state.shapes.map(s => ({
+        id: s.id,
+        type: s.type,
+        strokeWidth: s.strokeWidth,
+        points: s.points.map(p => ({x: p.x, y: p.y}))
+    }));
+    console.log(`[DEBUG-ACTION] 추출 완료 (총 ${data.length}개 데이터)`);
+    console.table(data);
+};
+
+const shortcutManager = new ShortcutManager(state, workspace);
+shortcutManager.register('s', () => setTool('select'));
+shortcutManager.register('l', () => setTool('line'));
+shortcutManager.register('r', () => setTool('rect'));
+shortcutManager.register('c', () => setTool('circle'));
+
+// ZoomManager 초기화 및 휠 이벤트 등록
+const zoomManager = ZoomManager.getInstance(workspaceContainer, workspace);
+
+workspaceContainer.addEventListener('wheel', (e) => {
+    // 1. 활성화된 도구(Tool)에게 휠 이벤트를 먼저 던짐 (도구별 커스텀 휠 동작 지원)
+    if (state.activeTool && typeof state.activeTool.onWheel === 'function') {
+        const handled = state.activeTool.onWheel(e);
+        if (handled) return; // 도구가 이벤트를 소비했다면 종료
+    }
+    // 2. 도구가 처리하지 않은 경우에만 ZoomManager가 확대/축소 수행
+    zoomManager.handleWheel(e);
+}, { passive: false });
+
+function updateCanvasSize() {
+    let width = 800;
+    let height = 600;
+    
+    if (state.currentSizePreset === 'custom') {
+        width = parseInt(customWidthInput.value, 10) || 800;
+        height = parseInt(customHeightInput.value, 10) || 600;
+    } else if (PRESETS[state.currentSizePreset]) {
+        width = PRESETS[state.currentSizePreset].w;
+        height = PRESETS[state.currentSizePreset].h;
+    } else if (state.currentSizePreset === 'fit') {
+        const rect = workspaceContainer.getBoundingClientRect();
+        width = rect.width > 0 ? rect.width - 80 : 800;
+        height = rect.height > 0 ? rect.height - 80 : 600;
+    }
+
+    // 논리적 좌표계(viewBox) 고정
+    workspace.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    
+    // 초기 물리적 크기 할당 (이후 ZoomManager가 배율에 맞게 제어함)
+    workspace.setAttribute('width', width);
+    workspace.setAttribute('height', height);
+    
+    console.log(`[SYSTEM] 캔버스 논리 해상도(viewBox) 업데이트 완료 | ${width}x${height} (모드: ${state.currentSizePreset})`);
+}
+
+sizePresetSelect.addEventListener('change', (e) => {
+    state.currentSizePreset = e.target.value;
+    console.log(`[EVENT change] 용지 프리셋 변경 감지: ${state.currentSizePreset}`);
+    
+    if (state.currentSizePreset === 'custom') {
+        customSizeControls.classList.add('visible');
+    } else {
+        customSizeControls.classList.remove('visible');
+    }
+    
+    updateCanvasSize();
+    
+    // 용지 크기 변경 후 화면에 맞춤 (레이아웃 렌더링 후 계산하기 위해 짧은 지연)
+    setTimeout(() => {
+        zoomManager.fitToScreen();
+    }, 50);
+});
+
+[customWidthInput, customHeightInput].forEach(input => {
+    input.addEventListener('change', () => {
+        updateCanvasSize();
+        setTimeout(() => {
+            zoomManager.fitToScreen();
+        }, 50);
+    });
+});
+
+// 초기 화면 로드시 & 브라우저 창 크기가 변할 때마다 맞춤 실행
+window.addEventListener('load', () => {
+    zoomManager.fitToScreen();
+});
+
+window.addEventListener('resize', () => {
+    zoomManager.fitToScreen();
+});
+
+updateCanvasSize();
+setTool('select');
 
 sidebar.addEventListener('click', (e) => {
     if (e.target.classList.contains('tool-btn')) {
         const toolId = e.target.id.replace('tool-', '');
-        state.currentTool = toolId;
-        document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
-        e.target.classList.add('active');
-        console.log(`[SYSTEM] 툴 변경: ${toolId}`);
+        setTool(toolId);
     }
 });
 
+strokeWidthInput.addEventListener('change', (e) => {
+    state.currentStrokeWidth = parseInt(e.target.value, 10) || 4;
+    console.log(`[STATE] 선 굵기 업데이트: ${state.currentStrokeWidth}`);
+});
+
 workspace.addEventListener('mousedown', (e) => {
-    if (state.currentTool === 'select') return;
-
-    state.isDrawing = true;
-    state.startX = e.offsetX;
-    state.startY = e.offsetY;
-    shapeIdCounter++;
-
-    const shape = ShapeFactory.createShape(state.currentTool, `shape_${shapeIdCounter}`, state.startX, state.startY);
-    
-    if (shape) {
-        state.currentShape = shape;
-        workspace.appendChild(shape.element);
-        console.log("[EVENT] mousedown 드로잉 시작");
+    if (state.activeTool) {
+        console.log(`[EVENT mousedown] 워크스페이스 클릭 감지 -> 도구 전달`);
+        state.activeTool.onMouseDown(e);
     }
 });
 
 workspace.addEventListener('mousemove', (e) => {
-    if (!state.isDrawing || !state.currentShape) return;
-    state.currentShape.update(e.offsetX, e.offsetY);
+    if (state.activeTool) {
+        state.activeTool.onMouseMove(e);
+    }
 });
 
 workspace.addEventListener('mouseup', (e) => {
-    if (!state.isDrawing) return;
-    
-    if (state.currentShape) {
-        state.shapes.push(state.currentShape);
-        console.log(`[EVENT] mouseup 도형 저장 완료 | 총 개수: ${state.shapes.length}`);
+    if (state.activeTool) {
+        console.log(`[EVENT mouseup] 클릭 종료 감지 -> 도구 전달`);
+        state.activeTool.onMouseUp(e);
     }
-    
-    state.isDrawing = false;
-    state.currentShape = null;
 });
 
-window.addEventListener('keydown', (e) => {
-    if (e.key === 'F1') {
-        e.preventDefault();
-        console.log("[DEBUG] 현재 저장된 도형 데이터 구조 (리터럴):");
-        const data = state.shapes.map(s => ({
-            id: s.id,
-            type: s.type,
-            points: s.points.map(p => ({x: p.x, y: p.y}))
-        }));
-        console.table(data);
+document.getElementById('btn-export-svg').addEventListener('click', () => {
+    console.log("[EXPORT] SVG 형식 데이터 직렬화 및 다운로드 시작");
+    
+    // 내보내기 시 논리 크기(viewBox)를 기준으로 강제 복원하여 해상도 유지
+    const viewBox = workspace.getAttribute('viewBox');
+    let w = 800, h = 600;
+    if (viewBox) {
+        const parts = viewBox.split(' ');
+        w = parseFloat(parts[2]);
+        h = parseFloat(parts[3]);
     }
+    
+    const oldWidth = workspace.getAttribute('width');
+    const oldHeight = workspace.getAttribute('height');
+    
+    workspace.setAttribute('width', w);
+    workspace.setAttribute('height', h);
+    
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(workspace);
+    
+    // 원래 배율 상태로 원상 복구
+    workspace.setAttribute('width', oldWidth);
+    workspace.setAttribute('height', oldHeight);
+
+    const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `emergency_map_${Date.now()}.svg`;
+    link.click();
+});
+
+document.getElementById('btn-export-png').addEventListener('click', () => {
+    console.log("[EXPORT] PNG 래스터 이미지 렌더링 및 다운로드 시작");
+    
+    // 내보내기 시 논리 크기(viewBox)를 기준으로 강제 복원하여 해상도 유지
+    const viewBox = workspace.getAttribute('viewBox');
+    let w = 800, h = 600;
+    if (viewBox) {
+        const parts = viewBox.split(' ');
+        w = parseFloat(parts[2]);
+        h = parseFloat(parts[3]);
+    }
+    
+    const oldWidth = workspace.getAttribute('width');
+    const oldHeight = workspace.getAttribute('height');
+    
+    workspace.setAttribute('width', w);
+    workspace.setAttribute('height', h);
+    
+    const svgData = new XMLSerializer().serializeToString(workspace);
+    
+    // 원래 배율 상태로 원상 복구
+    workspace.setAttribute('width', oldWidth);
+    workspace.setAttribute('height', oldHeight);
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+    
+    canvas.width = w; 
+    canvas.height = h;
+    
+    const svgBlob = new Blob([svgData], {type: "image/svg+xml;charset=utf-8"});
+    const url = URL.createObjectURL(svgBlob);
+    
+    img.onload = () => {
+        ctx.fillStyle = "white";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        const pngUrl = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.href = pngUrl;
+        link.download = `emergency_map_${Date.now()}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+    img.src = url;
 });

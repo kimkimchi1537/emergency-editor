@@ -1,18 +1,16 @@
 import { LineShape } from '../shapes/LineShape.js';
 import { RectShape } from '../shapes/RectShape.js';
 import { CircleShape } from '../shapes/CircleShape.js';
-import { ArrowShape } from '../shapes/ArrowShape.js';
 
 export class ShapeFactory {
     static registry = {
         line: LineShape,
         rect: RectShape,
-        circle: CircleShape,
-        arrow: ArrowShape
+        circle: CircleShape
     };
 
-    static createShape(type, id, startX, startY) {
-        console.log(`[FACTORY] 도형 생성 요청 | Type: ${type}, ID: ${id}`);
+    static createShape(type, id, startX, startY, strokeWidth) {
+        console.log(`[FACTORY] 도형 생성 요청 | Type: ${type}, ID: ${id}, Width: ${strokeWidth}`);
         const ShapeClass = this.registry[type];
         
         if (!ShapeClass) {
@@ -20,7 +18,8 @@ export class ShapeFactory {
             return null;
         }
 
-        const instance = new ShapeClass(id, startX, startY);
+        console.log(`[FACTORY] ${ShapeClass.name} 생성자 호출 직전`);
+        const instance = new ShapeClass(id, startX, startY, strokeWidth);
         console.log("[FACTORY] 인스턴스 반환 완료");
         return instance;
     }
