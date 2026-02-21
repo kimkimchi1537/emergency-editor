@@ -53,4 +53,67 @@ export class BaseShape {
             this.element.setAttribute('y2', this.points[1].y);
         }
     }
+
+    // ==========================================
+    // [정적 유틸리티] 다중 선택(임시 그룹) 연산 위임부
+    // ==========================================
+
+    static prepareGroupSnapshot(shapes) {
+        shapes.forEach(shape => {
+            shape._tempStartPoints = shape.points.map(p => ({ x: p.x, y: p.y }));
+            const currentTransform = shape.element.getAttribute('transform') || '';
+            const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+            
+            if (match) {
+                shape._tempStartAngle = parseFloat(match[1]);
+                shape._tempStartCx = parseFloat(match[2]);
+                shape._tempStartCy = parseFloat(match[3]);
+            } else {
+                shape._tempStartAngle = 0;
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                shape.points.forEach(p => {
+                    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                });
+                shape._tempStartCx = minX + (maxX - minX) / 2;
+                shape._tempStartCy = minY + (maxY - minY) / 2;
+            }
+        });
+        console.log(`[BASESHAPE-STATIC] 임시 그룹 회전용 스냅샷 저장 완료 | 대상: ${shapes.length}개 도형`);
+    }
+
+    static rotateGroup(shapes, deltaAngle, rotationCenter) {
+        const deltaRad = deltaAngle * (Math.PI / 180);
+        const cosA = Math.cos(deltaRad);
+        const sinA = Math.sin(deltaRad);
+
+        shapes.forEach(shape => {
+            shape.points.forEach((p, i) => {
+                p.x = shape._tempStartPoints[i].x;
+                p.y = shape._tempStartPoints[i].y;
+            });
+            shape.updateAttributes();
+            shape.setRotation(shape._tempStartAngle, shape._tempStartCx, shape._tempStartCy);
+
+            const dx = shape._tempStartCx - rotationCenter.x;
+            const dy = shape._tempStartCy - rotationCenter.y;
+            
+            const newCx = rotationCenter.x + dx * cosA - dy * sinA;
+            const newCy = rotationCenter.y + dx * sinA + dy * cosA;
+
+            const moveX = newCx - shape._tempStartCx;
+            const moveY = newCy - shape._tempStartCy;
+
+            shape.move(moveX, moveY);
+
+            const newRotation = shape._tempStartAngle + deltaAngle;
+            shape.setRotation(newRotation, newCx, newCy);
+        });
+        console.log(`[BASESHAPE-STATIC] 임시 그룹 물리적 회전(공전+자전) 연산 적용 완료 | 변위각: ${deltaAngle.toFixed(1)}도`);
+    }
+
+    static moveGroup(shapes, dx, dy) {
+        shapes.forEach(shape => shape.move(dx, dy));
+        console.log(`[BASESHAPE-STATIC] 임시 그룹 일괄 이동 적용 완료 | dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)}`);
+    }
 }

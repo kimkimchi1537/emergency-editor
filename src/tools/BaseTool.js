@@ -6,6 +6,10 @@ export class BaseTool {
         console.log(`[CLASS BaseTool] 도구 기본 인스턴스 초기화 | 상태 및 워크스페이스 참조 저장`);
     }
 
+    onActivate() {
+        console.log(`[METHOD onActivate] 기본 도구 - 활성화 시점 생명주기 로직 실행 (재정의 가능)`);
+    }
+
     onMouseDown(e) {
         console.log(`[METHOD onMouseDown] 기본 도구 - 재정의 필요`);
     }
@@ -19,7 +23,7 @@ export class BaseTool {
     }
 
     onDeactivate() {
-        console.log(`[METHOD onDeactivate] 도구 비활성화 시점 정리 로직 실행`);
+        console.log(`[METHOD onDeactivate] 도구 비활성화 시점 생명주기 정리 로직 실행`);
     }
 
     handleKeyDown(e) {

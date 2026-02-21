@@ -2,11 +2,12 @@ import { BaseTool } from './BaseTool.js';
 import { ShapeFactory } from '../factory/ShapeFactory.js';
 import { HistoryManager } from '../managers/HistoryManager.js';
 
-export class MultiLineTool extends BaseTool {
+export class CircleTool extends BaseTool {
     constructor(state, workspace, shapeIdCounterRef) {
         super(state, workspace);
         this.shapeIdCounterRef = shapeIdCounterRef;
-        console.log(`[CLASS MultiLineTool] 연속선 그리기 도구 초기화 완료`);
+        this.shapeType = 'circle'; // 자신의 역할을 명확하게 하드코딩
+        console.log(`[CLASS CircleTool] 원 그리기 독립 도구 초기화 완료`);
     }
 
     onMouseDown(e) {
@@ -17,17 +18,20 @@ export class MultiLineTool extends BaseTool {
 
         const pos = this.getMousePosition(e);
         this.lastMousePos = pos;
-        
+
         if (!this.state.isDrawing) {
             this.state.isDrawing = true;
+            this.state.startX = pos.x;
+            this.state.startY = pos.y;
+            
             this.shapeIdCounterRef.value++;
             
-            console.log(`[MULTILINE-TOOL] 신규 연속선 생성 시작 | ID: shape_${this.shapeIdCounterRef.value}`);
+            console.log(`[CIRCLE-TOOL] 신규 원 생성 시작 | ID: shape_${this.shapeIdCounterRef.value}`);
             const shape = ShapeFactory.createShape(
-                'multiline',
+                this.shapeType,
                 `shape_${this.shapeIdCounterRef.value}`,
-                pos.x,
-                pos.y,
+                this.state.startX,
+                this.state.startY,
                 this.state.currentStrokeWidth
             );
 
@@ -37,7 +41,8 @@ export class MultiLineTool extends BaseTool {
             }
         } else {
             if (this.state.currentShape) {
-                this.state.currentShape.addPoint(pos.x, pos.y);
+                this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
+                this.completeDrawing();
             }
         }
     }
@@ -49,70 +54,39 @@ export class MultiLineTool extends BaseTool {
         this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
     }
 
-    onMouseUp(e) {}
+    onMouseUp(e) {
+        // Click-to-Click 방식 유지
+    }
 
     completeDrawing() {
-        if (!this.state.isDrawing || !this.state.currentShape) return;
+        console.log(`[CIRCLE-TOOL] 원 완성 확정 (연속 그리기 대기)`);
         
-        console.log(`[MULTILINE-TOOL] 그리기 완료 프로세스(Complete) 진입 | 큐(Queue)를 통한 선택 요청`);
+        HistoryManager.getInstance(this.state, this.workspace).saveState();
+        this.state.shapes.push(this.state.currentShape);
+        
+        if (typeof this.state.requestSelection === 'function') {
+            this.state.requestSelection(this.state.currentShape);
+        }
+        
+        // 도구 전환(setTool) 없이 상태만 깔끔하게 비우고 대기 (연속 그리기 적용)
         this.state.isDrawing = false;
-        const targetShape = this.state.currentShape;
         this.state.currentShape = null;
         this.lastMousePos = null;
-
-        targetShape.finish(); 
-        
-        if (targetShape.points.length >= 2) {
-            HistoryManager.getInstance(this.state, this.workspace).saveState();
-            this.state.shapes.push(targetShape);
-
-            // [정상 로직] 큐에 넣기만 하면 나머지는 생명주기에 의해 처리됨
-            if (typeof this.state.requestSelection === 'function') {
-                this.state.requestSelection(targetShape);
-            }
-            
-            if (typeof this.state.setTool === 'function') {
-                this.state.setTool('select');
-            }
-        } else {
-            if (targetShape.element && targetShape.element.parentNode) {
-                targetShape.element.parentNode.removeChild(targetShape.element);
-            }
-        }
     }
 
     cancelDrawing() {
         if (!this.state.isDrawing) return;
-        
-        console.log(`[MULTILINE-TOOL] 그리기 취소 프로세스(Cancel) 진입`);
+        console.log(`[CIRCLE-TOOL] 원 그리기 취소`);
         if (this.state.currentShape && this.state.currentShape.element && this.state.currentShape.element.parentNode) {
             this.state.currentShape.element.parentNode.removeChild(this.state.currentShape.element);
         }
-        
         this.state.isDrawing = false;
         this.state.currentShape = null;
         this.lastMousePos = null;
     }
 
-    handleUndo() {
-        if (this.state.isDrawing && this.state.currentShape) {
-            const removed = this.state.currentShape.removeLastFixedPoint();
-            if (!removed) {
-                this.cancelDrawing();
-            } else if (this.lastMousePos) {
-                this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false);
-            }
-            return true;
-        }
-        return false;
-    }
-
     handleKeyDown(e) {
         const key = e.key.toLowerCase();
-        if (key === 'enter') {
-            this.completeDrawing();
-            return true;
-        }
         if (key === 'escape') {
             this.cancelDrawing();
             return true;
@@ -134,7 +108,6 @@ export class MultiLineTool extends BaseTool {
 
     onDeactivate() {
         if (this.state.isDrawing) {
-            console.log(`[MULTILINE-TOOL] 도구 전환으로 인한 드로잉 취소`);
             this.cancelDrawing();
         }
         super.onDeactivate();

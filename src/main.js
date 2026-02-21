@@ -1,10 +1,12 @@
 import { ShortcutManager } from './managers/ShortcutManager.js';
 import { ZoomManager } from './managers/ZoomManager.js';
-import { DrawTool } from './tools/DrawTool.js';
 import { SelectTool } from './tools/SelectTool.js';
 import { MultiLineTool } from './tools/MultiLineTool.js';
+import { LineTool } from './tools/LineTool.js';
+import { RectTool } from './tools/RectTool.js';
+import { CircleTool } from './tools/CircleTool.js';
 
-console.log("[SYSTEM] Main Entry 진입 - 유연한 단축키 바인딩 시스템 및 다중 선택 상태 적용");
+console.log("[SYSTEM] Main Entry 진입 - 큐(Queue) 기반 선택 및 독립 도구 클래스 아키텍처 적용");
 
 const state = {
     currentTool: 'select',
@@ -15,8 +17,14 @@ const state = {
     startY: 0,
     currentShape: null,
     selectedShapes: [],
+    selectionQueue: [],
     shapes: [],
-    activeTool: null
+    activeTool: null,
+    setTool: null,
+    requestSelection: function(shape) {
+        this.selectionQueue.push(shape);
+        console.log(`[STATE] 도형 선택 큐에 추가됨 | ID: ${shape.id}, 대기열 크기: ${this.selectionQueue.length}`);
+    }
 };
 
 const PRESETS = {
@@ -38,9 +46,12 @@ const customSizeControls = document.getElementById('custom-size-controls');
 const customWidthInput = document.getElementById('custom-width');
 const customHeightInput = document.getElementById('custom-height');
 
+// DrawTool 폐기 후 각 도형 도구를 독립적인 인스턴스로 분리 생성
 const tools = {
     'select': new SelectTool(state, workspace),
-    'draw': new DrawTool(state, workspace, shapeIdCounter),
+    'line': new LineTool(state, workspace, shapeIdCounter),
+    'rect': new RectTool(state, workspace, shapeIdCounter),
+    'circle': new CircleTool(state, workspace, shapeIdCounter),
     'multiline': new MultiLineTool(state, workspace, shapeIdCounter)
 };
 
@@ -63,16 +74,19 @@ function setTool(toolId) {
     if (toolId === 'select') {
         state.activeTool = tools['select'];
         workspace.style.cursor = 'default';
-    } else if (toolId === 'multiline') {
-        state.activeTool = tools['multiline'];
-        workspace.style.cursor = 'crosshair';
     } else {
-        state.activeTool = tools['draw'];
+        state.activeTool = tools[toolId];
         workspace.style.cursor = 'crosshair';
     }
     
     console.log(`[SYSTEM] 현재 활성 도구 인스턴스: ${state.activeTool.constructor.name}`);
+
+    if (state.activeTool && typeof state.activeTool.onActivate === 'function') {
+        state.activeTool.onActivate();
+    }
 }
+
+state.setTool = setTool;
 
 const showDebugData = () => {
     console.log("[DEBUG-ACTION] 캔버스 내부 데이터 무결성 검사 및 로그 출력");

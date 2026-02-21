@@ -1,5 +1,7 @@
 import { BaseTool } from './BaseTool.js';
 import { HistoryManager } from '../managers/HistoryManager.js';
+import { HandlerFactory } from '../factory/HandlerFactory.js';
+import { BaseShape } from '../shapes/BaseShape.js';
 
 export class SelectTool extends BaseTool {
     constructor(state, workspace) {
@@ -16,8 +18,57 @@ export class SelectTool extends BaseTool {
         this.rotationCenter = { x: 0, y: 0 };
         this.initialAngle = 0;
         this.currentDeltaAngle = 0;
+        this.initialBoundingBox = null;
         
-        console.log(`[CLASS SelectTool] 선택 도구 초기화 | OCP 준수 - 객체지향 위임 패턴 적용 완료`);
+        this.visualBox = null; 
+        this.targetBox = null; 
+        this.isAnimRunning = false; 
+        this.lerpFactor = 0.18; 
+        this.animThreshold = 0.05; 
+
+        console.log(`[CLASS SelectTool] 선택 도구 초기화 | Double-Rotation 버그 픽스 및 OBB/AABB 트랜지션 로직 적용`);
+    }
+
+    onActivate() {
+        console.log(`[SELECT-TOOL] 도구 활성화 생명주기 진입 | 선택 대기열 큐(Queue) 확인 시작`);
+        
+        if (this.state.selectionQueue && this.state.selectionQueue.length > 0) {
+            console.log(`[SELECT-TOOL] 대기열 감지 (크기: ${this.state.selectionQueue.length}) - 대기열 소비 및 자동 선택 처리`);
+            this.clearSelection(); 
+            
+            while (this.state.selectionQueue.length > 0) {
+                const targetShape = this.state.selectionQueue.shift(); 
+                if (this.state.shapes.includes(targetShape)) {
+                    this.state.selectedShapes.push(targetShape);
+                    targetShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; 
+                    console.log(`[SELECT-TOOL] 큐 소비: 도형 ID ${targetShape.id} 선택 상태로 전환`);
+                }
+            }
+        }
+
+        if (this.state.selectedShapes.length > 0) {
+            console.log(`[SELECT-TOOL] 활성화 시점 선택 객체 존재 - UI 렌더링 엔진 즉시 트리거`);
+            this.renderSelectionUI();
+        }
+        
+        super.onActivate();
+    }
+
+    getInverseTransformedPoint(pos, shape) {
+        const currentTransform = shape.element.getAttribute('transform') || '';
+        const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+        let localPos = { x: pos.x, y: pos.y };
+        if (match) {
+            const angleDeg = parseFloat(match[1]);
+            const cx = parseFloat(match[2]);
+            const cy = parseFloat(match[3]);
+            const angleRad = -angleDeg * (Math.PI / 180); 
+            const dx = pos.x - cx;
+            const dy = pos.y - cy;
+            localPos.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+            localPos.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+        }
+        return localPos;
     }
 
     onMouseDown(e) {
@@ -27,7 +78,6 @@ export class SelectTool extends BaseTool {
         
         if (this.state.selectedShapes.length === 1 && e.target.classList.contains('resize-handle')) {
             const index = parseInt(e.target.getAttribute('data-index'), 10);
-            console.log(`[SELECT-TOOL] 리사이즈 핸들 포착 | Index: ${index}`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isResizing = true;
             this.resizeHandleIndex = index;
@@ -35,7 +85,6 @@ export class SelectTool extends BaseTool {
         }
 
         if (this.state.selectedShapes.length > 0 && e.target.classList.contains('rotate-handle')) {
-            console.log(`[SELECT-TOOL] 회전 핸들 포착 - 회전 프로세스 진입`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isRotating = true;
             this.prepareRotation(pos);
@@ -43,7 +92,6 @@ export class SelectTool extends BaseTool {
         }
 
         if (this.state.selectedShapes.length > 0 && this.isPointInSelectionBox(pos)) {
-            console.log(`[SELECT-TOOL] 선택 영역(Box) 내부 클릭 감지 - 이동 모드 진입`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isMoving = true;
             this.moveStart = pos;
@@ -52,17 +100,15 @@ export class SelectTool extends BaseTool {
 
         let clickedShape = null;
         for (let i = this.state.shapes.length - 1; i >= 0; i--) {
-            if (this.state.shapes[i].containsPoint(pos.x, pos.y)) {
+            const localPos = this.getInverseTransformedPoint(pos, this.state.shapes[i]);
+            if (this.state.shapes[i].containsPoint(localPos.x, localPos.y)) {
                 clickedShape = this.state.shapes[i];
                 break;
             }
         }
 
         if (clickedShape) {
-            console.log(`[SELECT-TOOL] 도형 직접 클릭: ${clickedShape.id}`);
-            
             if (this.state.selectedShapes.includes(clickedShape) && !isShift) {
-                console.log(`[SELECT-TOOL] 이미 선택된 도형 드래그 - 이동 모드 진입`);
                 HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.isMoving = true;
                 this.moveStart = pos;
@@ -86,7 +132,6 @@ export class SelectTool extends BaseTool {
             this.currentDeltaAngle = 0; 
             this.renderSelectionUI();
         } else {
-            console.log(`[SELECT-TOOL] 빈 공간 클릭 - Marquee 영역 선택 시작`);
             if (!isShift) this.clearSelection();
             this.startMarquee(pos);
         }
@@ -126,16 +171,15 @@ export class SelectTool extends BaseTool {
                 return;
             }
             if (this.isPointInSelectionBox(pos)) {
-                if (this.workspace.style.cursor !== 'move') {
-                    this.workspace.style.cursor = 'move';
-                }
+                this.workspace.style.cursor = 'move';
                 return;
             }
         }
 
         let hoverFound = false;
         for (let i = this.state.shapes.length - 1; i >= 0; i--) {
-            if (this.state.shapes[i].containsPoint(pos.x, pos.y)) {
+            const localPos = this.getInverseTransformedPoint(pos, this.state.shapes[i]);
+            if (this.state.shapes[i].containsPoint(localPos.x, localPos.y)) {
                 hoverFound = true;
                 break;
             }
@@ -145,20 +189,17 @@ export class SelectTool extends BaseTool {
 
     onMouseUp(e) {
         if (this.isResizing) {
-            console.log(`[SELECT-TOOL] 리사이즈 종료`);
             this.isResizing = false;
             this.resizeHandleIndex = -1;
             this.syncFinalTransforms();
         }
 
         if (this.isRotating) {
-            console.log(`[SELECT-TOOL] 회전 종료`);
             this.isRotating = false;
             this.syncFinalTransforms();
         }
 
         if (this.isMoving) {
-            console.log(`[SELECT-TOOL] 이동 종료`);
             this.isMoving = false;
         }
 
@@ -169,109 +210,157 @@ export class SelectTool extends BaseTool {
         }
     }
 
-    isPointInSelectionBox(pos) {
-        if (!this.selectionOverlay) return false;
-        const box = this.getSelectionBoundingBox();
-        const padding = 5;
+    renderSelectionUI() {
+        if (this.state.selectedShapes.length === 0) {
+            this.clearSelectionOverlay();
+            return;
+        }
 
-        if (this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'line') {
-            const line = this.state.selectedShapes[0];
-            const p1 = line.points[0];
-            const p2 = line.points[1];
-            const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-            const angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
-            
-            const dx = pos.x - p1.x;
-            const dy = pos.y - p1.y;
-            const angleRad = -angleDeg * (Math.PI / 180);
-            const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
-            const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
-
-            return rx >= -padding && rx <= length + padding && ry >= -padding && ry <= padding;
+        // 1. [핵심 수정부] 이중 회전/팽창 버그 방지
+        let newTarget;
+        if (this.state.selectedShapes.length === 1) {
+            newTarget = HandlerFactory.getHandler(this.state.selectedShapes[0].type).getBox(this.state.selectedShapes[0]);
         } else {
-            const cx = box.minX + box.width / 2;
-            const cy = box.minY + box.height / 2;
-            const angleDeg = this.currentDeltaAngle || 0;
-            
-            const dx = pos.x - cx;
-            const dy = pos.y - cy;
-            const angleRad = -angleDeg * (Math.PI / 180);
-            const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
-            const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+            // 그룹 회전 중(Drag)일 때는 강체(OBB) 유지를 위해 초기 박스 크기를 그대로 사용!
+            // 마우스를 놓아 회전이 끝났을 때만 새로운 도형 위치를 감싸는 AABB를 재계산함.
+            if (this.isRotating && this.initialBoundingBox) {
+                newTarget = { ...this.initialBoundingBox };
+            } else {
+                newTarget = this.getSelectionBoundingBox();
+            }
+        }
 
-            const halfW = (box.width / 2) + padding;
-            const halfH = (box.height / 2) + padding;
+        // 2. 초기화 또는 목표 갱신
+        if (!this.visualBox) {
+            this.visualBox = { ...newTarget };
+        }
+        this.targetBox = newTarget;
 
-            return Math.abs(rx) <= halfW && Math.abs(ry) <= halfH;
+        // 3. 이전 상태와 현재 상태의 수치가 다르다면 애니메이션 엔진 트리거
+        if (!this.isAnimRunning && this.checkDifference()) {
+            this.startAnimLoop();
+        }
+
+        // 4. 즉시 렌더링 (루프 밖에서도 현재 visualBox 기반으로 그려야 함)
+        if (!this.isAnimRunning) {
+            this.drawSelectionOverlay(this.visualBox);
         }
     }
 
-    prepareRotation(pos) {
-        const box = this.getSelectionBoundingBox();
-        this.rotationCenter = {
-            x: box.minX + box.width / 2,
-            y: box.minY + box.height / 2
+    checkDifference() {
+        if (!this.visualBox || !this.targetBox) return false;
+        return Math.abs(this.visualBox.minX - this.targetBox.minX) > this.animThreshold ||
+               Math.abs(this.visualBox.minY - this.targetBox.minY) > this.animThreshold ||
+               Math.abs(this.visualBox.width - this.targetBox.width) > this.animThreshold ||
+               Math.abs(this.visualBox.height - this.targetBox.height) > this.animThreshold;
+    }
+
+    startAnimLoop() {
+        if (this.isAnimRunning) return;
+        this.isAnimRunning = true;
+
+        const loop = () => {
+            if (!this.isAnimRunning || !this.targetBox || !this.visualBox) return;
+
+            // 선형 보간(Lerp) 연산 적용
+            this.visualBox.minX += (this.targetBox.minX - this.visualBox.minX) * this.lerpFactor;
+            this.visualBox.minY += (this.targetBox.minY - this.visualBox.minY) * this.lerpFactor;
+            this.visualBox.width += (this.targetBox.width - this.visualBox.width) * this.lerpFactor;
+            this.visualBox.height += (this.targetBox.height - this.visualBox.height) * this.lerpFactor;
+            this.visualBox.maxX = this.visualBox.minX + this.visualBox.width;
+            this.visualBox.maxY = this.visualBox.minY + this.visualBox.height;
+
+            // 보간된 중간값으로 UI 갱신
+            this.drawSelectionOverlay(this.visualBox);
+
+            if (this.checkDifference()) {
+                this.animId = requestAnimationFrame(loop);
+            } else {
+                // 수렴 완료 시 물리 목표값으로 스냅 고정
+                this.visualBox = { ...this.targetBox };
+                this.drawSelectionOverlay(this.visualBox);
+                this.isAnimRunning = false;
+            }
         };
+
+        this.animId = requestAnimationFrame(loop);
+    }
+
+    drawSelectionOverlay(box) {
+        if (this.selectionOverlay) {
+            this.workspace.removeChild(this.selectionOverlay);
+            this.selectionOverlay = null;
+        }
+
+        this.selectionOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        this.selectionOverlay.setAttribute('class', 'selection-ui-layer');
+
+        if (this.state.selectedShapes.length === 1) {
+            const shape = this.state.selectedShapes[0];
+            const handler = HandlerFactory.getHandler(shape.type);
+            handler.renderUI(this.selectionOverlay, shape, this.isRotating, this.currentDeltaAngle, this.rotationCenter, box);
+        } else {
+            const handler = HandlerFactory.getHandler('group');
+            handler.renderUI(this.selectionOverlay, this.state.selectedShapes, this.isRotating, this.currentDeltaAngle, this.rotationCenter, box);
+        }
+
+        this.workspace.appendChild(this.selectionOverlay);
+    }
+
+    clearSelectionOverlay() {
+        if (this.selectionOverlay) {
+            this.workspace.removeChild(this.selectionOverlay);
+            this.selectionOverlay = null;
+        }
+        this.visualBox = null;
+        this.targetBox = null;
+        this.isAnimRunning = false;
+        if (this.animId) cancelAnimationFrame(this.animId);
+    }
+
+    prepareRotation(pos) {
+        this.initialBoundingBox = this.getSelectionBoundingBox();
+        BaseShape.prepareGroupSnapshot(this.state.selectedShapes);
+
+        if (this.state.selectedShapes.length === 1) {
+            this.rotationCenter = {
+                x: this.state.selectedShapes[0]._tempStartCx,
+                y: this.state.selectedShapes[0]._tempStartCy
+            };
+        } else {
+            this.rotationCenter = {
+                x: this.initialBoundingBox.minX + this.initialBoundingBox.width / 2,
+                y: this.initialBoundingBox.minY + this.initialBoundingBox.height / 2
+            };
+        }
+
         this.initialAngle = Math.atan2(pos.y - this.rotationCenter.y, pos.x - this.rotationCenter.x) * (180 / Math.PI);
-        this.state.selectedShapes.forEach(shape => {
-            const currentTransform = shape.element.getAttribute('transform') || '';
-            const match = currentTransform.match(/rotate\(([-\d.]+)/);
-            shape._tempStartRotation = match ? parseFloat(match[1]) : 0;
-        });
     }
 
     applyRotation(pos, isShift) {
         const currentMouseAngle = Math.atan2(pos.y - this.rotationCenter.y, pos.x - this.rotationCenter.x) * (180 / Math.PI);
-        const deltaAngle = currentMouseAngle - this.initialAngle;
+        let deltaAngle = currentMouseAngle - this.initialAngle;
 
-        this.state.selectedShapes.forEach(shape => {
-            let newRotation = (shape._tempStartRotation || 0) + deltaAngle;
-            if (isShift) {
-                newRotation = Math.round(newRotation / 15) * 15;
-            }
-            shape.setRotation(newRotation, this.rotationCenter.x, this.rotationCenter.y);
-            
-            if (this.state.selectedShapes.length === 1) {
-                this.currentDeltaAngle = newRotation - (shape._tempStartRotation || 0);
-            }
-        });
-
-        if (this.state.selectedShapes.length > 1) {
-            this.currentDeltaAngle = isShift ? Math.round(deltaAngle / 15) * 15 : deltaAngle;
+        if (isShift) {
+            deltaAngle = Math.round(deltaAngle / 15) * 15;
         }
 
+        BaseShape.rotateGroup(this.state.selectedShapes, deltaAngle, this.rotationCenter);
+        this.currentDeltaAngle = deltaAngle;
         this.renderSelectionUI();
     }
 
     applyMove(pos) {
         const dx = pos.x - this.moveStart.x;
         const dy = pos.y - this.moveStart.y;
-
-        this.state.selectedShapes.forEach(shape => {
-            shape.move(dx, dy); 
-        });
-
+        BaseShape.moveGroup(this.state.selectedShapes, dx, dy);
         this.moveStart = pos;
         this.renderSelectionUI();
     }
 
     applyResize(pos, isShift) {
         const shape = this.state.selectedShapes[0];
-        const transform = shape.element.getAttribute('transform') || '';
-        let localPos = { x: pos.x, y: pos.y };
-        
-        const match = transform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
-        if (match) {
-            const angleDeg = parseFloat(match[1]);
-            const cx = parseFloat(match[2]);
-            const cy = parseFloat(match[3]);
-            const angleRad = -angleDeg * (Math.PI / 180);
-            const dx = pos.x - cx;
-            const dy = pos.y - cy;
-            localPos.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
-            localPos.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
-        }
-        
+        const localPos = this.getInverseTransformedPoint(pos, shape);
         shape.resize(this.resizeHandleIndex, localPos.x, localPos.y, isShift);
         this.renderSelectionUI();
     }
@@ -282,154 +371,40 @@ export class SelectTool extends BaseTool {
             const match = currentTransform.match(/rotate\(([-\d.]+)/);
             shape._lastRotation = match ? parseFloat(match[1]) : 0;
         });
+        
+        // 회전 종료 시 새로운 AABB 계산 및 애니메이션 트리거
+        if (this.state.selectedShapes.length > 1) {
+            this.renderSelectionUI(); 
+        }
     }
 
-    renderSelectionUI() {
-        if (this.selectionOverlay) {
-            this.workspace.removeChild(this.selectionOverlay);
-            this.selectionOverlay = null;
+    getRotatedPoints(shape) {
+        const currentTransform = shape.element.getAttribute('transform') || '';
+        const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+        let angleRad = 0, cx = 0, cy = 0;
+        
+        if (match) {
+            angleRad = parseFloat(match[1]) * (Math.PI / 180);
+            cx = parseFloat(match[2]);
+            cy = parseFloat(match[3]);
         }
-        if (this.state.selectedShapes.length === 0) return;
-
-        let box, overlayTransform = "";
-        const padding = 5;
-
-        if (this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'line') {
-            const line = this.state.selectedShapes[0];
-            const p1 = line.points[0];
-            const p2 = line.points[1];
-            const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
-            
-            box = { minX: 0, minY: -padding, width: length, height: padding * 2 };
-            overlayTransform = `translate(${p1.x}, ${p1.y}) rotate(${angle})`;
-            
-            const currentTransform = line.element.getAttribute('transform') || '';
-            const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
-            if (match && !this.isRotating) {
-                overlayTransform = `${match[0]} ${overlayTransform}`;
-            } else if (this.isRotating) {
-                overlayTransform = `rotate(${this.currentDeltaAngle}, ${this.rotationCenter.x}, ${this.rotationCenter.y}) ${overlayTransform}`;
-            }
-        } else {
-            box = this.getSelectionBoundingBox();
-            if (this.isRotating) {
-                overlayTransform = `rotate(${this.currentDeltaAngle}, ${this.rotationCenter.x}, ${this.rotationCenter.y})`;
-            } else {
-                const firstShape = this.state.selectedShapes[0];
-                const currentTransform = firstShape.element.getAttribute('transform') || '';
-                const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
-                if (match) overlayTransform = match[0];
-            }
-        }
-
-        this.selectionOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        this.selectionOverlay.setAttribute('class', 'selection-ui-layer');
-        if (overlayTransform) this.selectionOverlay.setAttribute('transform', overlayTransform);
-
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', box.minX - padding);
-        rect.setAttribute('y', box.minY - padding);
-        rect.setAttribute('width', box.width + padding * 2);
-        rect.setAttribute('height', box.height + padding * 2);
-        rect.setAttribute('fill', 'transparent'); 
-        rect.setAttribute('stroke', '#0066cc');
-        rect.setAttribute('stroke-width', '1');
-        rect.setAttribute('stroke-dasharray', '4,2');
-        rect.style.pointerEvents = 'none';
-        this.selectionOverlay.appendChild(rect);
-
-        const handleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        handleLine.setAttribute('x1', box.minX + box.width / 2);
-        handleLine.setAttribute('y1', box.minY - padding);
-        handleLine.setAttribute('x2', box.minX + box.width / 2);
-        handleLine.setAttribute('y2', box.minY - 25);
-        handleLine.setAttribute('stroke', '#0066cc');
-        handleLine.style.pointerEvents = 'none';
-        this.selectionOverlay.appendChild(handleLine);
-
-        if (this.state.selectedShapes.length === 1) {
-            const shape = this.state.selectedShapes[0];
-            const drawHandle = (x, y, index) => {
-                const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                handle.setAttribute('class', 'resize-handle');
-                handle.setAttribute('data-index', index);
-                handle.setAttribute('x', x - 4);
-                handle.setAttribute('y', y - 4);
-                handle.setAttribute('width', 8);
-                handle.setAttribute('height', 8);
-                handle.setAttribute('fill', '#fff');
-                handle.setAttribute('stroke', '#0066cc');
-                handle.setAttribute('stroke-width', 1.5);
-                handle.style.cursor = 'crosshair';
-                handle.style.pointerEvents = 'auto';
-                this.selectionOverlay.appendChild(handle);
+        
+        return shape.points.map(p => {
+            if (!match) return { x: p.x, y: p.y };
+            const dx = p.x - cx;
+            const dy = p.y - cy;
+            return {
+                x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad),
+                y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
             };
-
-            if (shape.type === 'line') {
-                const p1 = shape.points[0];
-                const p2 = shape.points[1];
-                const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-                drawHandle(0, 0, 0);
-                drawHandle(length, 0, 1);
-            } else if (shape.type === 'multiline') {
-                shape.points.forEach((p, i) => {
-                    drawHandle(p.x, p.y, i);
-                });
-            } else if (shape.type === 'rect') {
-                console.log(`[SELECT-TOOL] 사각형 꼭짓점 렌더링 정상화 완료`);
-                drawHandle(box.minX, box.minY, 0);
-                drawHandle(box.minX + box.width, box.minY, 1);
-                drawHandle(box.minX + box.width, box.minY + box.height, 2);
-                drawHandle(box.minX, box.minY + box.height, 3);
-            } else if (shape.type === 'circle') {
-                console.log(`[SELECT-TOOL] 원형 중앙 엣지 핸들 렌더링 유지 완료`);
-                drawHandle(box.minX + box.width / 2, box.minY, 0);
-                drawHandle(box.minX + box.width, box.minY + box.height / 2, 1);
-                drawHandle(box.minX + box.width / 2, box.minY + box.height, 2);
-                drawHandle(box.minX, box.minY + box.height / 2, 3);
-            }
-        }
-
-        const rotateHandleGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        rotateHandleGroup.setAttribute('class', 'rotate-handle');
-        rotateHandleGroup.style.cursor = 'grab';
-        rotateHandleGroup.style.pointerEvents = 'auto';
-
-        const rotateCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        rotateCircle.setAttribute('class', 'rotate-handle');
-        rotateCircle.setAttribute('cx', box.minX + box.width / 2);
-        rotateCircle.setAttribute('cy', box.minY - 25);
-        rotateCircle.setAttribute('r', '10');
-        rotateCircle.setAttribute('fill', '#fff');
-        rotateCircle.setAttribute('stroke', '#0066cc');
-        rotateCircle.setAttribute('stroke-width', '1');
-        rotateHandleGroup.appendChild(rotateCircle);
-
-        const rotateIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        rotateIcon.setAttribute('class', 'rotate-handle material-icons');
-        rotateIcon.setAttribute('x', box.minX + box.width / 2);
-        rotateIcon.setAttribute('y', box.minY - 25); 
-        rotateIcon.setAttribute('dominant-baseline', 'central');
-        rotateIcon.setAttribute('text-anchor', 'middle');
-        rotateIcon.setAttribute('font-size', '14px');
-        rotateIcon.setAttribute('fill', '#0066cc');
-        rotateIcon.style.userSelect = 'none';
-        rotateIcon.style.webkitUserSelect = 'none';
-        rotateIcon.style.msUserSelect = 'none';
-        rotateIcon.style.mozUserSelect = 'none';
-        rotateIcon.textContent = 'rotate_right';
-        rotateHandleGroup.appendChild(rotateIcon);
-
-        this.selectionOverlay.appendChild(rotateHandleGroup);
-
-        this.workspace.appendChild(this.selectionOverlay);
+        });
     }
 
     getSelectionBoundingBox() {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         this.state.selectedShapes.forEach(shape => {
-            shape.points.forEach(p => {
+            const rotatedPoints = this.getRotatedPoints(shape);
+            rotatedPoints.forEach(p => {
                 minX = Math.min(minX, p.x);
                 minY = Math.min(minY, p.y);
                 maxX = Math.max(maxX, p.x);
@@ -437,6 +412,21 @@ export class SelectTool extends BaseTool {
             });
         });
         return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+    }
+
+    isPointInSelectionBox(pos) {
+        if (!this.selectionOverlay || this.state.selectedShapes.length === 0) return false;
+        const padding = 5;
+        const box = this.visualBox || this.getSelectionBoundingBox();
+
+        if (this.state.selectedShapes.length === 1) {
+            const shape = this.state.selectedShapes[0];
+            const handler = HandlerFactory.getHandler(shape.type);
+            return handler.containsPoint(pos, shape, padding, this.currentDeltaAngle, this.isRotating, this.rotationCenter, box);
+        } else {
+            const handler = HandlerFactory.getHandler('group');
+            return handler.containsPoint(pos, this.state.selectedShapes, padding, this.currentDeltaAngle, this.isRotating, this.rotationCenter, box);
+        }
     }
 
     startMarquee(pos) {
@@ -468,7 +458,6 @@ export class SelectTool extends BaseTool {
         const heightAttr = this.marqueeElement.getAttribute('height');
 
         if (!widthAttr || !heightAttr || parseFloat(widthAttr) === 0 || parseFloat(heightAttr) === 0) {
-            console.log(`[SELECT-TOOL] Marquee 드래그 없음 (제자리 클릭) - 다중 선택 로직 취소됨`);
             this.workspace.removeChild(this.marqueeElement);
             this.marqueeElement = null;
             this.isMarquee = false;
@@ -480,13 +469,10 @@ export class SelectTool extends BaseTool {
         const width = parseFloat(widthAttr);
         const height = parseFloat(heightAttr);
         const marqueeBox = { minX: x, minY: y, maxX: x + width, maxY: y + height };
-        
-        console.log(`[SELECT-TOOL] Marquee 영역 확정 | 좌표: (${marqueeBox.minX.toFixed(1)}, ${marqueeBox.minY.toFixed(1)}) ~ (${marqueeBox.maxX.toFixed(1)}, ${marqueeBox.maxY.toFixed(1)})`);
 
         this.state.shapes.forEach(shape => {
             if (this.isShapeInBox(shape, marqueeBox)) {
                 if (!this.state.selectedShapes.includes(shape)) {
-                    console.log(`[SELECT-TOOL] Marquee 영역 내 도형 포착 | ID: ${shape.id}`);
                     this.state.selectedShapes.push(shape);
                     shape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
                 }
@@ -500,7 +486,8 @@ export class SelectTool extends BaseTool {
 
     isShapeInBox(shape, box) {
         let shapeBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-        shape.points.forEach(p => {
+        const rotatedPoints = this.getRotatedPoints(shape); 
+        rotatedPoints.forEach(p => {
             shapeBox.minX = Math.min(shapeBox.minX, p.x);
             shapeBox.minY = Math.min(shapeBox.minY, p.y);
             shapeBox.maxX = Math.max(shapeBox.maxX, p.x);
@@ -521,12 +508,10 @@ export class SelectTool extends BaseTool {
         }
         if (e.key === 'Shift' && this.lastMousePos) {
             if (this.isResizing) {
-                console.log(`[SELECT-TOOL] Shift 눌림 - 실시간 리사이즈 스냅 갱신`);
                 this.applyResize(this.lastMousePos, true);
                 return true;
             }
             if (this.isRotating) {
-                console.log(`[SELECT-TOOL] Shift 눌림 - 실시간 회전 스냅 갱신`);
                 this.applyRotation(this.lastMousePos, true);
                 return true;
             }
@@ -537,12 +522,10 @@ export class SelectTool extends BaseTool {
     handleKeyUp(e) {
         if (e.key === 'Shift' && this.lastMousePos) {
             if (this.isResizing) {
-                console.log(`[SELECT-TOOL] Shift 뗌 - 실시간 리사이즈 스냅 해제`);
                 this.applyResize(this.lastMousePos, false);
                 return true;
             }
             if (this.isRotating) {
-                console.log(`[SELECT-TOOL] Shift 뗌 - 실시간 회전 스냅 해제`);
                 this.applyRotation(this.lastMousePos, false);
                 return true;
             }
@@ -556,10 +539,7 @@ export class SelectTool extends BaseTool {
         });
         this.state.selectedShapes = [];
         this.currentDeltaAngle = 0;
-        if (this.selectionOverlay) {
-            this.workspace.removeChild(this.selectionOverlay);
-            this.selectionOverlay = null;
-        }
+        this.clearSelectionOverlay();
     }
 
     deleteSelectedShapes() {
