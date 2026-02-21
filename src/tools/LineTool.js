@@ -32,7 +32,9 @@ export class LineTool extends BaseTool {
                 `shape_${this.shapeIdCounterRef.value}`,
                 this.state.startX,
                 this.state.startY,
-                this.state.currentStrokeWidth
+                this.state.currentStrokeWidth,
+                this.state.currentStrokeColor,
+                this.state.currentFillColor
             );
 
             if (shape) {

@@ -1,13 +1,15 @@
 export class BaseShape {
-    constructor(id, type, startX, startY, strokeWidth) {
+    constructor(id, type, startX, startY, strokeWidth, strokeColor = '#e63946', fillColor = 'transparent') {
         this.id = id;
         this.type = type;
         this.startX = startX;
         this.startY = startY;
         this.strokeWidth = strokeWidth;
+        this.strokeColor = strokeColor;
+        this.fillColor = fillColor;
         this.points = [];
         this.element = null;
-        console.log(`[CLASS BaseShape] 기본 도형 구조체 초기화 | ID: ${id}, Type: ${type}`);
+        console.log(`[CLASS BaseShape] 기본 도형 구조체 초기화 | ID: ${id}, Type: ${type}, 선: ${strokeColor}, 채우기: ${fillColor}`);
     }
 
     createPoint(x, y) {
@@ -42,6 +44,32 @@ export class BaseShape {
     setRotation(angle, cx, cy) {
         this.element.setAttribute('transform', `rotate(${angle}, ${cx}, ${cy})`);
         console.log(`[METHOD setRotation] ${this.id}(${this.type}) 자체 회전 수행 완료 | 각도=${angle.toFixed(1)}, 중심=(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
+    }
+
+    getColors() {
+        return { stroke: this.strokeColor, fill: this.fillColor };
+    }
+
+    setColors(strokeColor, fillColor) {
+        this.strokeColor = strokeColor;
+        this.fillColor = fillColor;
+        this.applyColors();
+        console.log(`[METHOD setColors] ${this.id}(${this.type}) 색상 변경 완료 | 선: ${strokeColor}, 채우기: ${fillColor}`);
+    }
+
+    applyColors() {
+        if (this.element) {
+            this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+            if (this.fillColor === 'transparent') {
+                this.element.setAttribute('fill', 'none');
+            } else {
+                // 채우기 적용 시 자동으로 0.2 반투명 처리
+                const r = parseInt(this.fillColor.slice(1, 3), 16) || 0;
+                const g = parseInt(this.fillColor.slice(3, 5), 16) || 0;
+                const b = parseInt(this.fillColor.slice(5, 7), 16) || 0;
+                this.element.setAttribute('fill', `rgba(${r}, ${g}, ${b}, 0.2)`);
+            }
+        }
     }
 
     updateAttributes() {

@@ -1,8 +1,8 @@
 import { BaseShape } from './BaseShape.js';
 
 export class RectShape extends BaseShape {
-    constructor(id, startX, startY, strokeWidth) {
-        super(id, 'rect', startX, startY, strokeWidth);
+    constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+        super(id, 'rect', startX, startY, strokeWidth, strokeColor, fillColor);
         this.points = [
             this.createPoint(startX, startY),
             this.createPoint(startX, startY),
@@ -14,9 +14,8 @@ export class RectShape extends BaseShape {
         this.element.setAttribute('y', startY);
         this.element.setAttribute('width', '0');
         this.element.setAttribute('height', '0');
-        this.element.setAttribute('stroke', '#1d3557');
         this.element.setAttribute('stroke-width', this.strokeWidth);
-        this.element.setAttribute('fill', 'rgba(29, 53, 87, 0.1)');
+        this.applyColors();
         console.log(`[CLASS RectShape] Rect 생성 완료 | ID: ${id}, 굵기: ${this.strokeWidth}`);
     }
 

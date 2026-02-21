@@ -28,7 +28,9 @@ export class MultiLineTool extends BaseTool {
                 `shape_${this.shapeIdCounterRef.value}`,
                 pos.x,
                 pos.y,
-                this.state.currentStrokeWidth
+                this.state.currentStrokeWidth,
+                this.state.currentStrokeColor,
+                this.state.currentFillColor
             );
 
             if (shape) {

@@ -11,8 +11,8 @@ export class ShapeFactory {
         multiline: MultiLineShape
     };
 
-    static createShape(type, id, startX, startY, strokeWidth) {
-        console.log(`[FACTORY] 도형 생성 요청 | Type: ${type}, ID: ${id}, Width: ${strokeWidth}`);
+    static createShape(type, id, startX, startY, strokeWidth, strokeColor, fillColor) {
+        console.log(`[FACTORY] 도형 생성 요청 | Type: ${type}, ID: ${id}, Width: ${strokeWidth}, Stroke: ${strokeColor}, Fill: ${fillColor}`);
         const ShapeClass = this.registry[type];
         
         if (!ShapeClass) {
@@ -21,7 +21,7 @@ export class ShapeFactory {
         }
 
         console.log(`[FACTORY] ${ShapeClass.name} 생성자 호출 직전`);
-        const instance = new ShapeClass(id, startX, startY, strokeWidth);
+        const instance = new ShapeClass(id, startX, startY, strokeWidth, strokeColor, fillColor);
         console.log("[FACTORY] 인스턴스 반환 완료");
         return instance;
     }

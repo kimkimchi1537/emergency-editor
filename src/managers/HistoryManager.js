@@ -74,5 +74,9 @@ export class HistoryManager {
         this.state.shapes.forEach(shape => {
             this.workspace.appendChild(shape.element);
         });
+
+        if (this.state.colorManager) {
+            this.state.colorManager.updateUI(this.state.selectedShapes);
+        }
     }
 }

@@ -1,8 +1,8 @@
 import { BaseShape } from './BaseShape.js';
 
 export class CircleShape extends BaseShape {
-    constructor(id, startX, startY, strokeWidth) {
-        super(id, 'circle', startX, startY, strokeWidth);
+    constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+        super(id, 'circle', startX, startY, strokeWidth, strokeColor, fillColor);
         this.points = [
             this.createPoint(startX, startY),
             this.createPoint(startX, startY),
@@ -14,9 +14,8 @@ export class CircleShape extends BaseShape {
         this.element.setAttribute('cy', startY);
         this.element.setAttribute('rx', '0');
         this.element.setAttribute('ry', '0');
-        this.element.setAttribute('stroke', '#2a9d8f');
         this.element.setAttribute('stroke-width', this.strokeWidth);
-        this.element.setAttribute('fill', 'rgba(42, 157, 143, 0.1)');
+        this.applyColors();
         console.log(`[CLASS CircleShape] Circle 생성 완료 | ID: ${id}, 굵기: ${this.strokeWidth}`);
     }
 

@@ -1,18 +1,25 @@
 import { BaseShape } from './BaseShape.js';
 
 export class LineShape extends BaseShape {
-    constructor(id, startX, startY, strokeWidth) {
-        super(id, 'line', startX, startY, strokeWidth);
+    constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+        super(id, 'line', startX, startY, strokeWidth, strokeColor, fillColor);
         this.points = [this.createPoint(startX, startY), this.createPoint(startX, startY)];
         this.element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
         this.element.setAttribute('x1', startX);
         this.element.setAttribute('y1', startY);
         this.element.setAttribute('x2', startX);
         this.element.setAttribute('y2', startY);
-        this.element.setAttribute('stroke', '#e63946');
         this.element.setAttribute('stroke-width', this.strokeWidth);
         this.element.setAttribute('stroke-linecap', 'round');
+        this.applyColors();
         console.log(`[CLASS LineShape] Line 생성 완료 | ID: ${id}, 굵기: ${this.strokeWidth}`);
+    }
+
+    applyColors() {
+        if (this.element) {
+            this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+            this.element.setAttribute('fill', 'none'); // 선은 채우기 강제 투명
+        }
     }
 
     update(currentX, currentY, isShift = false) {

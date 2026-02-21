@@ -1,17 +1,23 @@
 import { BaseShape } from './BaseShape.js';
 
 export class MultiLineShape extends BaseShape {
-    constructor(id, startX, startY, strokeWidth) {
-        super(id, 'multiline', startX, startY, strokeWidth);
+    constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+        super(id, 'multiline', startX, startY, strokeWidth, strokeColor, fillColor);
         this.points = [this.createPoint(startX, startY), this.createPoint(startX, startY)];
         this.element = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-        this.element.setAttribute('fill', 'none');
-        this.element.setAttribute('stroke', '#e63946');
         this.element.setAttribute('stroke-width', this.strokeWidth);
         this.element.setAttribute('stroke-linejoin', 'round');
         this.element.setAttribute('stroke-linecap', 'round');
+        this.applyColors();
         this.updateAttributes();
         console.log(`[CLASS MultiLineShape] 연속선 생성 완료 | ID: ${id}, 굵기: ${this.strokeWidth}`);
+    }
+
+    applyColors() {
+        if (this.element) {
+            this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+            this.element.setAttribute('fill', 'none'); // 연속선은 채우기 강제 투명
+        }
     }
 
     addPoint(x, y) {

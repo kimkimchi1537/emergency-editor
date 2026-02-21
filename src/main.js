@@ -1,5 +1,6 @@
 import { ShortcutManager } from './managers/ShortcutManager.js';
 import { ZoomManager } from './managers/ZoomManager.js';
+import { ColorManager } from './managers/ColorManager.js';
 import { SelectTool } from './tools/SelectTool.js';
 import { MultiLineTool } from './tools/MultiLineTool.js';
 import { LineTool } from './tools/LineTool.js';
@@ -11,6 +12,8 @@ console.log("[SYSTEM] Main Entry 진입 - 큐(Queue) 기반 선택 및 독립 �
 const state = {
     currentTool: 'select',
     currentStrokeWidth: 4,
+    currentStrokeColor: '#e63946',
+    currentFillColor: '#1d3557',
     currentSizePreset: 'fit',
     isDrawing: false,
     startX: 0,
@@ -45,6 +48,9 @@ const sizePresetSelect = document.getElementById('canvas-size-preset');
 const customSizeControls = document.getElementById('custom-size-controls');
 const customWidthInput = document.getElementById('custom-width');
 const customHeightInput = document.getElementById('custom-height');
+
+const colorManager = new ColorManager(state, workspace);
+state.colorManager = colorManager;
 
 // DrawTool 폐기 후 각 도형 도구를 독립적인 인스턴스로 분리 생성
 const tools = {

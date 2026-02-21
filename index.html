@@ -9,7 +9,7 @@
         body { margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #282828; color: #fff; font-family: sans-serif; overflow: hidden; }
         
         #header-options { height: 60px; background-color: #333; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #1e1e1e; gap: 20px; flex-shrink: 0; }
-        .option-group { display: flex; align-items: center; gap: 8px; }
+        .option-group { display: flex; align-items: center; gap: 8px; position: relative; }
         .option-label { font-size: 13px; color: #bbb; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
         .option-label .material-icons { font-size: 18px; }
         
@@ -29,6 +29,30 @@
         
         .custom-size-inputs { display: none; align-items: center; gap: 5px; }
         .custom-size-inputs.visible { display: flex; }
+
+        /* 커스텀 컬러 피커 UI 스타일 */
+        .color-picker-container { position: relative; }
+        .color-picker-btn { width: 34px; height: 34px; border-radius: 4px; border: 1px solid #666; cursor: pointer; position: relative; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0px; }
+        .color-preview { width: 100%; height: 100%; border-radius: 3px; position: absolute; top: 0; left: 0; }
+        .mixed-icon { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: rgba(50,50,50,0.8); color: #fff; border-radius: 3px; pointer-events: none; font-size: 18px; }
+        
+        .color-popover { display: none; position: absolute; top: 100%; left: 0; margin-top: 8px; background: #2b2b2b; border: 1px solid #444; padding: 12px; border-radius: 6px; width: 220px; z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.6); cursor: default; }
+        .color-popover.active { display: block; }
+        
+        .popover-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .popover-row input[type="color"] { width: 34px; height: 34px; padding: 0; border: none; cursor: pointer; background: none; flex-shrink: 0; }
+        .popover-row input[type="text"] { flex: 1; background: #1e1e1e; border: 1px solid #444; color: #fff; padding: 6px; border-radius: 3px; font-size: 12px; font-family: monospace; }
+        .popover-row input[type="range"] { flex: 1; cursor: pointer; accent-color: #0066cc; }
+        
+        .alpha-label { font-size: 12px; color: #aaa; width: 35px; text-align: center; font-weight: bold; }
+        .alpha-val { font-size: 12px; color: #ddd; width: 40px; text-align: right; }
+        .checkbox-label { font-size: 12px; color: #bbb; display: flex; align-items: center; gap: 6px; cursor: pointer; margin-top: 5px; }
+        
+        .recent-colors-title { font-size: 11px; color: #888; margin-top: 12px; margin-bottom: 6px; padding-top: 10px; border-top: 1px solid #444; }
+        .recent-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+        .recent-color-swatch { width: 100%; aspect-ratio: 1; border-radius: 3px; border: 1px solid #555; cursor: pointer; position: relative; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0px; transition: transform 0.1s; }
+        .recent-color-swatch:hover { transform: scale(1.1); border-color: #fff; z-index: 2; }
+        .recent-color-inner { width: 100%; height: 100%; border-radius: 2px; position: absolute; top: 0; left: 0; }
     </style>
 </head>
 <body>
@@ -37,6 +61,57 @@
             <label class="option-label"><span class="material-icons">line_weight</span>굵기</label>
             <input type="number" id="stroke-width-input" min="1" max="20" value="4">
         </div>
+        
+        <!-- 선 색상 커스텀 패널 -->
+        <div class="option-group">
+            <label class="option-label"><span class="material-icons">palette</span>선</label>
+            <div class="color-picker-container" id="stroke-picker-container">
+                <div class="color-picker-btn" id="stroke-color-btn" title="선 색상 선택">
+                    <div class="color-preview" id="stroke-color-preview"></div>
+                    <span class="material-icons mixed-icon" id="stroke-mixed-icon" style="display:none;">question_mark</span>
+                </div>
+                <div class="color-popover" id="stroke-popover">
+                    <div class="popover-row">
+                        <input type="color" id="stroke-native-picker">
+                        <input type="text" id="stroke-text-input" placeholder="rgba(r, g, b, a)">
+                    </div>
+                    <div class="popover-row">
+                        <span class="alpha-label">Alpha</span>
+                        <input type="range" id="stroke-alpha-slider" min="0" max="1" step="0.01" value="1">
+                        <span class="alpha-val" id="stroke-alpha-val">100%</span>
+                    </div>
+                    <label class="checkbox-label"><input type="checkbox" id="stroke-transparent-chk">완전 투명</label>
+                    <div class="recent-colors-title">최근 사용된 색상</div>
+                    <div class="recent-colors" id="stroke-recent-colors"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 채우기 색상 커스텀 패널 -->
+        <div class="option-group">
+            <label class="option-label"><span class="material-icons">format_paint</span>채우기</label>
+            <div class="color-picker-container" id="fill-picker-container">
+                <div class="color-picker-btn" id="fill-color-btn" title="채우기 색상 선택">
+                    <div class="color-preview" id="fill-color-preview"></div>
+                    <span class="material-icons mixed-icon" id="fill-mixed-icon" style="display:none;">question_mark</span>
+                </div>
+                <div class="color-popover" id="fill-popover">
+                    <div class="popover-row">
+                        <input type="color" id="fill-native-picker">
+                        <input type="text" id="fill-text-input" placeholder="rgba(r, g, b, a)">
+                    </div>
+                    <div class="popover-row">
+                        <span class="alpha-label">Alpha</span>
+                        <input type="range" id="fill-alpha-slider" min="0" max="1" step="0.01" value="0.2">
+                        <span class="alpha-val" id="fill-alpha-val">20%</span>
+                    </div>
+                    <label class="checkbox-label"><input type="checkbox" id="fill-transparent-chk">완전 투명</label>
+                    <div class="recent-colors-title">최근 사용된 색상</div>
+                    <div class="recent-colors" id="fill-recent-colors"></div>
+                </div>
+            </div>
+        </div>
+
         <div class="option-group">
             <label class="option-label"><span class="material-icons">description</span>용지</label>
             <select id="canvas-size-preset">

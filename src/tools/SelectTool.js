@@ -44,6 +44,7 @@ export class SelectTool extends BaseTool {
                     console.log(`[SELECT-TOOL] 큐 소비: 도형 ID ${targetShape.id} 선택 상태로 전환`);
                 }
             }
+            if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
         }
 
         if (this.state.selectedShapes.length > 0) {
@@ -139,8 +140,11 @@ export class SelectTool extends BaseTool {
             }
             this.currentDeltaAngle = 0; 
             this.renderSelectionUI();
+            if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
         } else {
-            if (!isShift) this.clearSelection();
+            if (!isShift) {
+                this.clearSelection();
+            }
             this.startMarquee(pos);
         }
     }
@@ -499,6 +503,8 @@ export class SelectTool extends BaseTool {
             }
         });
         
+        if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+
         this.workspace.removeChild(this.marqueeElement);
         this.marqueeElement = null;
         this.isMarquee = false;
@@ -560,6 +566,7 @@ export class SelectTool extends BaseTool {
         this.state.selectedShapes = [];
         this.currentDeltaAngle = 0;
         this.clearSelectionOverlay();
+        if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
     }
 
     deleteSelectedShapes() {
@@ -571,6 +578,7 @@ export class SelectTool extends BaseTool {
             if (idx > -1) this.state.shapes.splice(idx, 1);
         });
         this.state.selectedShapes = [];
+        if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
     }
 
     onDeactivate() {
