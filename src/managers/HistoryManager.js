@@ -29,6 +29,14 @@ export class HistoryManager {
             clonedShape.points = shape.points.map(p => ({...p}));
             clonedShape.element = shape.element.cloneNode(true);
             clonedShape.element.style.filter = '';
+            
+            // 그룹(GroupShape)인 경우 자식 객체까지 재귀적으로 깊은 복사(Deep Clone) 수행
+            if (shape.type === 'group' && shape.children) {
+                clonedShape.children = this.cloneShapes(shape.children);
+                clonedShape.element.innerHTML = ''; 
+                clonedShape.children.forEach(c => clonedShape.element.appendChild(c.element));
+            }
+            
             return clonedShape;
         });
     }

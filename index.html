@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>피난안내도 에디터 (Modular)</title>
+    <title>피난안내도 에디터 (Modular Consolidated)</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         body { margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #282828; color: #fff; font-family: sans-serif; overflow: hidden; }
@@ -30,7 +30,6 @@
         .custom-size-inputs { display: none; align-items: center; gap: 5px; }
         .custom-size-inputs.visible { display: flex; }
 
-        /* 커스텀 컬러 피커 UI 스타일 */
         .color-picker-container { position: relative; }
         .color-picker-btn { width: 34px; height: 34px; border-radius: 4px; border: 1px solid #666; cursor: pointer; position: relative; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 10px 10px; background-position: 0 0, 0 5px, 5px -5px, -5px 0px; }
         .color-preview { width: 100%; height: 100%; border-radius: 3px; position: absolute; top: 0; left: 0; }
@@ -53,6 +52,10 @@
         .recent-color-swatch { width: 100%; aspect-ratio: 1; border-radius: 3px; border: 1px solid #555; cursor: pointer; position: relative; background-image: linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%); background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0px; transition: transform 0.1s; }
         .recent-color-swatch:hover { transform: scale(1.1); border-color: #fff; z-index: 2; }
         .recent-color-inner { width: 100%; height: 100%; border-radius: 2px; position: absolute; top: 0; left: 0; }
+
+        .context-menu { display: none; position: absolute; background: #2b2b2b; border: 1px solid #444; border-radius: 4px; padding: 5px 0; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+        .menu-item { padding: 8px 15px; cursor: pointer; color: #ddd; font-size: 13px; }
+        .menu-item:hover { background: #0066cc; color: #fff; }
     </style>
 </head>
 <body>
@@ -62,7 +65,6 @@
             <input type="number" id="stroke-width-input" min="1" max="20" value="4">
         </div>
         
-        <!-- 선 색상 커스텀 패널 -->
         <div class="option-group">
             <label class="option-label"><span class="material-icons">palette</span>선</label>
             <div class="color-picker-container" id="stroke-picker-container">
@@ -87,7 +89,6 @@
             </div>
         </div>
 
-        <!-- 채우기 색상 커스텀 패널 -->
         <div class="option-group">
             <label class="option-label"><span class="material-icons">format_paint</span>채우기</label>
             <div class="color-picker-container" id="fill-picker-container">
@@ -156,6 +157,1298 @@
             </svg>
         </div>
     </div>
-    <script type="module" src="./src/main.js"></script>
+
+    <div id="context-menu" class="context-menu">
+        <div id="menu-group" class="menu-item">그룹화 (Group)</div>
+        <div id="menu-ungroup" class="menu-item">그룹 해제 (Ungroup)</div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. Base Classes & Shapes
+        // ==========================================
+        class BaseShape {
+            constructor(id, type, startX, startY, strokeWidth, strokeColor = '#e63946', fillColor = 'transparent') {
+                this.id = id;
+                this.type = type;
+                this.startX = startX;
+                this.startY = startY;
+                this.strokeWidth = strokeWidth;
+                this.strokeColor = strokeColor;
+                this.fillColor = fillColor;
+                this.points = [];
+                this.element = null;
+            }
+
+            createPoint(x, y) { return { x, y }; }
+            update(currentX, currentY, isShift = false) {}
+            containsPoint(px, py) { return false; }
+            resize(handleIndex, newX, newY, isShift = false) {}
+
+            move(dx, dy) {
+                this.points.forEach(p => { p.x += dx; p.y += dy; });
+                this.updateAttributes();
+                const currentTransform = this.element.getAttribute('transform') || '';
+                const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                if (match) {
+                    const angle = match[1];
+                    const newCx = parseFloat(match[2]) + dx;
+                    const newCy = parseFloat(match[3]) + dy;
+                    this.element.setAttribute('transform', `rotate(${angle}, ${newCx}, ${newCy})`);
+                }
+            }
+
+            setRotation(angle, cx, cy) {
+                this.element.setAttribute('transform', `rotate(${angle}, ${cx}, ${cy})`);
+            }
+
+            getColors() { return { stroke: this.strokeColor, fill: this.fillColor }; }
+            setColors(strokeColor, fillColor) {
+                this.strokeColor = strokeColor;
+                this.fillColor = fillColor;
+                this.applyColors();
+            }
+
+            applyColors() {
+                if (this.element) {
+                    this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+                    if (this.fillColor === 'transparent') {
+                        this.element.setAttribute('fill', 'none');
+                    } else {
+                        const r = parseInt(this.fillColor.slice(1, 3), 16) || 0;
+                        const g = parseInt(this.fillColor.slice(3, 5), 16) || 0;
+                        const b = parseInt(this.fillColor.slice(5, 7), 16) || 0;
+                        this.element.setAttribute('fill', `rgba(${r}, ${g}, ${b}, 0.2)`);
+                    }
+                }
+            }
+
+            updateAttributes() {
+                if (this.type === 'arrow' && this.points.length >= 2) {
+                    this.element.setAttribute('x1', this.points[0].x);
+                    this.element.setAttribute('y1', this.points[0].y);
+                    this.element.setAttribute('x2', this.points[1].x);
+                    this.element.setAttribute('y2', this.points[1].y);
+                }
+            }
+
+            // [핵심 픽스] 다중 연산을 위해 그룹 요소를 자식들로 완벽하게 평탄화(Flatten)
+            static getFlattenedShapes(shapes) {
+                let flattened = [];
+                shapes.forEach(shape => {
+                    if (shape.type === 'group') {
+                        flattened = flattened.concat(this.getFlattenedShapes(shape.children));
+                    } else {
+                        flattened.push(shape);
+                    }
+                });
+                return flattened;
+            }
+
+            static prepareGroupSnapshot(shapes) {
+                // 그룹 컨테이너 대신 실제 하위 도형들에게만 스냅샷 적용
+                const flatShapes = this.getFlattenedShapes(shapes);
+                flatShapes.forEach(shape => {
+                    shape._tempStartPoints = shape.points.map(p => ({ x: p.x, y: p.y }));
+                    const currentTransform = shape.element.getAttribute('transform') || '';
+                    const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    
+                    if (match) {
+                        shape._tempStartAngle = parseFloat(match[1]);
+                        shape._tempStartCx = parseFloat(match[2]);
+                        shape._tempStartCy = parseFloat(match[3]);
+                    } else {
+                        shape._tempStartAngle = 0;
+                        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                        shape.points.forEach(p => {
+                            minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                            maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                        });
+                        shape._tempStartCx = minX + (maxX - minX) / 2;
+                        shape._tempStartCy = minY + (maxY - minY) / 2;
+                    }
+                });
+            }
+
+            static rotateGroup(shapes, deltaAngle, rotationCenter) {
+                const flatShapes = this.getFlattenedShapes(shapes);
+                const deltaRad = deltaAngle * (Math.PI / 180);
+                const cosA = Math.cos(deltaRad);
+                const sinA = Math.sin(deltaRad);
+
+                flatShapes.forEach(shape => {
+                    shape.points.forEach((p, i) => {
+                        p.x = shape._tempStartPoints[i].x;
+                        p.y = shape._tempStartPoints[i].y;
+                    });
+                    shape.updateAttributes();
+                    shape.setRotation(shape._tempStartAngle, shape._tempStartCx, shape._tempStartCy);
+
+                    const dx = shape._tempStartCx - rotationCenter.x;
+                    const dy = shape._tempStartCy - rotationCenter.y;
+                    
+                    const newCx = rotationCenter.x + dx * cosA - dy * sinA;
+                    const newCy = rotationCenter.y + dx * sinA + dy * cosA;
+
+                    const moveX = newCx - shape._tempStartCx;
+                    const moveY = newCy - shape._tempStartCy;
+
+                    shape.move(moveX, moveY);
+                    const newRotation = shape._tempStartAngle + deltaAngle;
+                    shape.setRotation(newRotation, newCx, newCy);
+                });
+                
+                // 자식들이 이동했으므로 부모 그룹들의 바운딩 박스(points)도 수동 갱신
+                shapes.forEach(s => {
+                    if(s.type === 'group') s.updateAttributes();
+                });
+            }
+
+            static moveGroup(shapes, dx, dy) {
+                const flatShapes = this.getFlattenedShapes(shapes);
+                flatShapes.forEach(shape => shape.move(dx, dy));
+                
+                // 부모 그룹 껍데기 갱신
+                shapes.forEach(s => {
+                    if(s.type === 'group') s.updateAttributes();
+                });
+            }
+        }
+
+        class RectShape extends BaseShape {
+            constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+                super(id, 'rect', startX, startY, strokeWidth, strokeColor, fillColor);
+                this.points = [ this.createPoint(startX, startY), this.createPoint(startX, startY), this.createPoint(startX, startY), this.createPoint(startX, startY) ];
+                this.element = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                this.element.setAttribute('x', startX); this.element.setAttribute('y', startY);
+                this.element.setAttribute('width', '0'); this.element.setAttribute('height', '0');
+                this.element.setAttribute('stroke-width', this.strokeWidth);
+                this.applyColors();
+            }
+            update(currentX, currentY, isShift = false) {
+                let dx = currentX - this.startX; let dy = currentY - this.startY;
+                if (isShift) {
+                    const size = Math.max(Math.abs(dx), Math.abs(dy));
+                    dx = dx < 0 ? -size : size; dy = dy < 0 ? -size : size;
+                }
+                const minX = Math.min(this.startX, this.startX + dx); const minY = Math.min(this.startY, this.startY + dy);
+                const maxX = Math.max(this.startX, this.startX + dx); const maxY = Math.max(this.startY, this.startY + dy);
+                this.points[0].x = minX; this.points[0].y = minY; this.points[1].x = maxX; this.points[1].y = minY;
+                this.points[2].x = maxX; this.points[2].y = maxY; this.points[3].x = minX; this.points[3].y = maxY;
+                this.updateAttributes();
+            }
+            resize(handleIndex, newX, newY, isShift = false) {
+                if (handleIndex === 0) { this.points[0].x = newX; this.points[0].y = newY; this.points[1].y = newY; this.points[3].x = newX; }
+                else if (handleIndex === 1) { this.points[1].x = newX; this.points[1].y = newY; this.points[0].y = newY; this.points[2].x = newX; }
+                else if (handleIndex === 2) { this.points[2].x = newX; this.points[2].y = newY; this.points[1].x = newX; this.points[3].y = newY; }
+                else if (handleIndex === 3) { this.points[3].x = newX; this.points[3].y = newY; this.points[0].x = newX; this.points[2].y = newY; }
+                this.updateAttributes();
+                const cx = (this.points[0].x + this.points[2].x) / 2; const cy = (this.points[0].y + this.points[2].y) / 2;
+                const currentTransform = this.element.getAttribute('transform') || '';
+                const match = currentTransform.match(/rotate\(([-\d.]+)/);
+                if (match) this.element.setAttribute('transform', `rotate(${match[1]}, ${cx}, ${cy})`);
+            }
+            updateAttributes() {
+                const minX = Math.min(this.points[0].x, this.points[2].x); const maxX = Math.max(this.points[0].x, this.points[2].x);
+                const minY = Math.min(this.points[0].y, this.points[2].y); const maxY = Math.max(this.points[0].y, this.points[2].y);
+                this.element.setAttribute('x', minX); this.element.setAttribute('y', minY);
+                this.element.setAttribute('width', maxX - minX); this.element.setAttribute('height', maxY - minY);
+            }
+            containsPoint(px, py) {
+                const minX = Math.min(this.points[0].x, this.points[2].x); const maxX = Math.max(this.points[0].x, this.points[2].x);
+                const minY = Math.min(this.points[0].y, this.points[2].y); const maxY = Math.max(this.points[0].y, this.points[2].y);
+                return px >= minX && px <= maxX && py >= minY && py <= maxY;
+            }
+        }
+
+        class LineShape extends BaseShape {
+            constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+                super(id, 'line', startX, startY, strokeWidth, strokeColor, fillColor);
+                this.points = [this.createPoint(startX, startY), this.createPoint(startX, startY)];
+                this.element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                this.element.setAttribute('stroke-width', this.strokeWidth);
+                this.element.setAttribute('stroke-linecap', 'round');
+                this.updateAttributes();
+                this.applyColors();
+            }
+            applyColors() {
+                if (this.element) {
+                    this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+                    this.element.setAttribute('fill', 'none');
+                }
+            }
+            update(currentX, currentY, isShift = false) {
+                let finalX = currentX; let finalY = currentY;
+                if (isShift) {
+                    const dx = currentX - this.startX; const dy = currentY - this.startY;
+                    const angle = Math.atan2(dy, dx); const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    finalX = this.startX + dist * Math.cos(snapAngle); finalY = this.startY + dist * Math.sin(snapAngle);
+                }
+                this.points[1].x = finalX; this.points[1].y = finalY;
+                this.updateAttributes();
+            }
+            resize(handleIndex, newX, newY, isShift = false) {
+                this.points[handleIndex].x = newX; this.points[handleIndex].y = newY;
+                this.updateAttributes();
+            }
+            updateAttributes() {
+                this.element.setAttribute('x1', this.points[0].x); this.element.setAttribute('y1', this.points[0].y);
+                this.element.setAttribute('x2', this.points[1].x); this.element.setAttribute('y2', this.points[1].y);
+            }
+            containsPoint(px, py) {
+                const x1 = this.points[0].x; const y1 = this.points[0].y; const x2 = this.points[1].x; const y2 = this.points[1].y;
+                const l2 = Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2);
+                if (l2 === 0) return Math.sqrt(Math.pow(px - x1, 2) + Math.pow(py - y1, 2)) < this.strokeWidth / 2;
+                let t = Math.max(0, Math.min(1, ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2));
+                const projX = x1 + t * (x2 - x1); const projY = y1 + t * (y2 - y1);
+                return Math.sqrt(Math.pow(px - projX, 2) + Math.pow(py - projY, 2)) < (Number(this.strokeWidth) / 2 + 5);
+            }
+        }
+
+        class CircleShape extends BaseShape {
+            constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+                super(id, 'circle', startX, startY, strokeWidth, strokeColor, fillColor);
+                this.points = [ this.createPoint(startX, startY), this.createPoint(startX, startY), this.createPoint(startX, startY), this.createPoint(startX, startY) ];
+                this.element = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+                this.element.setAttribute('stroke-width', this.strokeWidth);
+                this.updateAttributes();
+                this.applyColors();
+            }
+            update(currentX, currentY, isShift = false) {
+                let dx = currentX - this.startX; let dy = currentY - this.startY;
+                if (isShift) {
+                    const size = Math.max(Math.abs(dx), Math.abs(dy));
+                    dx = dx < 0 ? -size : size; dy = dy < 0 ? -size : size;
+                }
+                const minX = Math.min(this.startX, this.startX + dx); const minY = Math.min(this.startY, this.startY + dy);
+                const maxX = Math.max(this.startX, this.startX + dx); const maxY = Math.max(this.startY, this.startY + dy);
+                this.points[0].x = minX; this.points[0].y = minY; this.points[1].x = maxX; this.points[1].y = minY;
+                this.points[2].x = maxX; this.points[2].y = maxY; this.points[3].x = minX; this.points[3].y = maxY;
+                this.updateAttributes();
+            }
+            resize(handleIndex, newX, newY, isShift = false) {
+                if (handleIndex === 0) { this.points[0].y = newY; this.points[1].y = newY; }
+                else if (handleIndex === 1) { this.points[1].x = newX; this.points[2].x = newX; }
+                else if (handleIndex === 2) { this.points[2].y = newY; this.points[3].y = newY; }
+                else if (handleIndex === 3) { this.points[0].x = newX; this.points[3].x = newX; }
+                this.updateAttributes();
+                const cx = (this.points[0].x + this.points[2].x) / 2; const cy = (this.points[0].y + this.points[2].y) / 2;
+                const currentTransform = this.element.getAttribute('transform') || '';
+                const match = currentTransform.match(/rotate\(([-\d.]+)/);
+                if (match) this.element.setAttribute('transform', `rotate(${match[1]}, ${cx}, ${cy})`);
+            }
+            updateAttributes() {
+                const cx = (this.points[0].x + this.points[2].x) / 2; const cy = (this.points[0].y + this.points[2].y) / 2;
+                const rx = Math.abs(this.points[2].x - this.points[0].x) / 2; const ry = Math.abs(this.points[2].y - this.points[0].y) / 2;
+                this.element.setAttribute('cx', cx); this.element.setAttribute('cy', cy);
+                this.element.setAttribute('rx', rx); this.element.setAttribute('ry', ry);
+            }
+            containsPoint(px, py) {
+                const cx = (this.points[0].x + this.points[2].x) / 2; const cy = (this.points[0].y + this.points[2].y) / 2;
+                const rx = Math.abs(this.points[2].x - this.points[0].x) / 2; const ry = Math.abs(this.points[2].y - this.points[0].y) / 2;
+                if (rx === 0 || ry === 0) return false;
+                return (Math.pow(px - cx, 2) / Math.pow(rx, 2) + Math.pow(py - cy, 2) / Math.pow(ry, 2)) <= 1;
+            }
+        }
+
+        class MultiLineShape extends BaseShape {
+            constructor(id, startX, startY, strokeWidth, strokeColor, fillColor) {
+                super(id, 'multiline', startX, startY, strokeWidth, strokeColor, fillColor);
+                this.points = [this.createPoint(startX, startY), this.createPoint(startX, startY)];
+                this.element = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+                this.element.setAttribute('stroke-width', this.strokeWidth);
+                this.element.setAttribute('stroke-linejoin', 'round');
+                this.element.setAttribute('stroke-linecap', 'round');
+                this.applyColors();
+                this.updateAttributes();
+            }
+            applyColors() {
+                if (this.element) {
+                    this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
+                    this.element.setAttribute('fill', 'none');
+                }
+            }
+            addPoint(x, y) { this.points.push(this.createPoint(x, y)); this.updateAttributes(); }
+            update(currentX, currentY, isShift = false) {
+                const lastIdx = this.points.length - 1; let finalX = currentX; let finalY = currentY;
+                if (isShift && this.points.length >= 2) {
+                    const prevX = this.points[lastIdx - 1].x; const prevY = this.points[lastIdx - 1].y;
+                    const dx = currentX - prevX; const dy = currentY - prevY;
+                    const angle = Math.atan2(dy, dx); const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    finalX = prevX + dist * Math.cos(snapAngle); finalY = prevY + dist * Math.sin(snapAngle);
+                }
+                this.points[lastIdx].x = finalX; this.points[lastIdx].y = finalY;
+                this.updateAttributes();
+            }
+            finish() { this.points.pop(); this.updateAttributes(); }
+            removeLastFixedPoint() {
+                if (this.points.length > 2) { this.points.splice(this.points.length - 2, 1); this.updateAttributes(); return true; }
+                return false;
+            }
+            resize(handleIndex, newX, newY, isShift = false) {
+                if (handleIndex >= 0 && handleIndex < this.points.length) {
+                    this.points[handleIndex].x = newX; this.points[handleIndex].y = newY; this.updateAttributes();
+                }
+            }
+            updateAttributes() {
+                this.element.setAttribute('points', this.points.map(p => `${p.x},${p.y}`).join(' '));
+            }
+            containsPoint(px, py) {
+                for (let i = 0; i < this.points.length - 1; i++) {
+                    const p1 = this.points[i]; const p2 = this.points[i + 1];
+                    const l2 = Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2);
+                    if (l2 === 0) continue;
+                    let t = Math.max(0, Math.min(1, ((px - p1.x) * (p2.x - p1.x) + (py - p1.y) * (p2.y - p1.y)) / l2));
+                    const projX = p1.x + t * (p2.x - p1.x); const projY = p1.y + t * (p2.y - p1.y);
+                    if (Math.sqrt(Math.pow(px - projX, 2) + Math.pow(py - projY, 2)) < (Number(this.strokeWidth) / 2 + 5)) return true;
+                }
+                return false;
+            }
+        }
+
+        class GroupShape extends BaseShape {
+            constructor(id, children) {
+                super(id, 'group', 0, 0, 0, 'transparent', 'transparent');
+                this.children = children;
+                this.element = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                this.element.setAttribute('class', 'shape-group');
+                this.children.forEach(child => { this.element.appendChild(child.element); });
+                this.updateAttributes(); // 초기 바운딩 박스 생성
+            }
+
+            // 그룹 컨테이너는 어떠한 변환도 갖지 않음 (무결성 핵심)
+            setRotation(angle, cx, cy) { /* 무시 - 자식들이 개별 회전함 */ }
+            move(dx, dy) { /* 무시 - 자식들이 개별 이동함 */ }
+
+            // 자식들의 현재 상태를 읽어 껍데기(바운딩 박스)만 갱신
+            updateAttributes() {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                
+                const getRotatedPoints = (shape) => {
+                    const currentTransform = shape.element.getAttribute('transform') || '';
+                    const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    let angleRad = 0, cx = 0, cy = 0;
+                    if (match) {
+                        angleRad = parseFloat(match[1]) * (Math.PI / 180);
+                        cx = parseFloat(match[2]); cy = parseFloat(match[3]);
+                    }
+                    return shape.points.map(p => {
+                        if (!match) return { x: p.x, y: p.y };
+                        const dx = p.x - cx; const dy = p.y - cy;
+                        return { x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad), y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad) };
+                    });
+                };
+
+                this.children.forEach(child => {
+                    const rotated = getRotatedPoints(child);
+                    rotated.forEach(p => {
+                        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                        maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                    });
+                });
+                
+                if (minX === Infinity) { minX=0; minY=0; maxX=0; maxY=0; }
+                this.points = [ this.createPoint(minX, minY), this.createPoint(maxX, minY), this.createPoint(maxX, maxY), this.createPoint(minX, maxY) ];
+            }
+
+            setColors(strokeColor, fillColor) {
+                this.strokeColor = strokeColor; this.fillColor = fillColor;
+                this.children.forEach(child => child.setColors(strokeColor, fillColor));
+            }
+
+            getColors() {
+                if (this.children.length > 0) return this.children[0].getColors();
+                return { stroke: 'transparent', fill: 'transparent' };
+            }
+
+            containsPoint(px, py) {
+                const getInverse = (pos, shape) => {
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    if (!match) return {x: pos.x, y: pos.y};
+                    const angleRad = -parseFloat(match[1]) * (Math.PI / 180); 
+                    const cx = parseFloat(match[2]); const cy = parseFloat(match[3]);
+                    const dx = pos.x - cx; const dy = pos.y - cy;
+                    return { x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad), y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad) };
+                };
+                for (let i = 0; i < this.children.length; i++) {
+                    const child = this.children[i];
+                    const cPos = getInverse({x: px, y: py}, child);
+                    if (child.containsPoint(cPos.x, cPos.y)) return true;
+                }
+                return false;
+            }
+            resize(handleIndex, newX, newY, isShift) {}
+        }
+
+        // ==========================================
+        // 2. Factories
+        // ==========================================
+        class ShapeFactory {
+            static registry = { line: LineShape, rect: RectShape, circle: CircleShape, multiline: MultiLineShape, group: GroupShape };
+            static createShape(type, id, startX, startY, strokeWidth, strokeColor, fillColor) {
+                return new this.registry[type](id, startX, startY, strokeWidth, strokeColor, fillColor);
+            }
+            static createGroup(id, children) { return new GroupShape(id, children); }
+        }
+
+        class BaseHandler {
+            getBox(shape) {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                shape.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+                return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+            }
+            renderUI(overlay, shape, isRotating, currentDeltaAngle, rotationCenter) {
+                const padding = 5; const box = this.getBox(shape);
+                let overlayTransform = "";
+                if (isRotating) overlayTransform = `rotate(${currentDeltaAngle}, ${rotationCenter.x}, ${rotationCenter.y})`;
+                else {
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    if (match) overlayTransform = match[0];
+                }
+                if (overlayTransform) overlay.setAttribute('transform', overlayTransform);
+                this.drawBoundingBox(overlay, box, padding);
+                this.drawRotateHandle(overlay, box, padding);
+                this.renderHandles(overlay, shape, box);
+            }
+            drawBoundingBox(overlay, box, padding) {
+                const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                rect.setAttribute('x', box.minX - padding); rect.setAttribute('y', box.minY - padding);
+                rect.setAttribute('width', box.width + padding * 2); rect.setAttribute('height', box.height + padding * 2);
+                rect.setAttribute('fill', 'transparent'); rect.setAttribute('stroke', '#0066cc');
+                rect.setAttribute('stroke-width', '1'); rect.setAttribute('stroke-dasharray', '4,2');
+                rect.style.pointerEvents = 'none'; overlay.appendChild(rect);
+            }
+            drawRotateHandle(overlay, box, padding) {
+                const handleLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                handleLine.setAttribute('x1', box.minX + box.width / 2); handleLine.setAttribute('y1', box.minY - padding);
+                handleLine.setAttribute('x2', box.minX + box.width / 2); handleLine.setAttribute('y2', box.minY - 25);
+                handleLine.setAttribute('stroke', '#0066cc'); handleLine.style.pointerEvents = 'none';
+                overlay.appendChild(handleLine);
+
+                const rotateHandleGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                rotateHandleGroup.setAttribute('class', 'rotate-handle'); rotateHandleGroup.style.cursor = 'grab'; rotateHandleGroup.style.pointerEvents = 'auto';
+
+                const rotateCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                rotateCircle.setAttribute('class', 'rotate-handle'); rotateCircle.setAttribute('cx', box.minX + box.width / 2); rotateCircle.setAttribute('cy', box.minY - 25);
+                rotateCircle.setAttribute('r', '10'); rotateCircle.setAttribute('fill', '#fff'); rotateCircle.setAttribute('stroke', '#0066cc'); rotateCircle.setAttribute('stroke-width', '1');
+                rotateHandleGroup.appendChild(rotateCircle);
+
+                const rotateIcon = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                rotateIcon.setAttribute('class', 'rotate-handle material-icons'); rotateIcon.setAttribute('x', box.minX + box.width / 2); rotateIcon.setAttribute('y', box.minY - 25); 
+                rotateIcon.setAttribute('dominant-baseline', 'central'); rotateIcon.setAttribute('text-anchor', 'middle'); rotateIcon.setAttribute('font-size', '14px');
+                rotateIcon.setAttribute('fill', '#0066cc'); rotateIcon.style.userSelect = 'none'; rotateIcon.textContent = 'rotate_right';
+                rotateHandleGroup.appendChild(rotateIcon);
+                overlay.appendChild(rotateHandleGroup);
+            }
+            containsPoint(pos, shape, padding, currentDeltaAngle, isRotating, rotationCenter) {
+                const box = this.getBox(shape); const cx = box.minX + box.width / 2; const cy = box.minY + box.height / 2;
+                let angleDeg = 0;
+                if (isRotating) angleDeg = currentDeltaAngle || 0;
+                else {
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+)/);
+                    if (match) angleDeg = parseFloat(match[1]);
+                }
+                const dx = pos.x - cx; const dy = pos.y - cy; const angleRad = -angleDeg * (Math.PI / 180);
+                const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad); const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+                return Math.abs(rx) <= (box.width / 2) + padding && Math.abs(ry) <= (box.height / 2) + padding;
+            }
+            createHandle(x, y, index) {
+                const handle = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                handle.setAttribute('class', 'resize-handle'); handle.setAttribute('data-index', index);
+                handle.setAttribute('x', x - 4); handle.setAttribute('y', y - 4); handle.setAttribute('width', 8); handle.setAttribute('height', 8);
+                handle.setAttribute('fill', '#fff'); handle.setAttribute('stroke', '#0066cc'); handle.setAttribute('stroke-width', 1.5);
+                handle.style.cursor = 'crosshair'; handle.style.pointerEvents = 'auto'; return handle;
+            }
+            renderHandles(overlay, shape, box) {}
+        }
+        
+        class RectHandler extends BaseHandler {
+            renderHandles(overlay, shape, box) {
+                overlay.appendChild(this.createHandle(box.minX, box.minY, 0)); overlay.appendChild(this.createHandle(box.minX + box.width, box.minY, 1));
+                overlay.appendChild(this.createHandle(box.minX + box.width, box.minY + box.height, 2)); overlay.appendChild(this.createHandle(box.minX, box.minY + box.height, 3));
+            }
+        }
+        class CircleHandler extends BaseHandler {
+            renderHandles(overlay, shape, box) {
+                overlay.appendChild(this.createHandle(box.minX + box.width / 2, box.minY, 0)); overlay.appendChild(this.createHandle(box.minX + box.width, box.minY + box.height / 2, 1));
+                overlay.appendChild(this.createHandle(box.minX + box.width / 2, box.minY + box.height, 2)); overlay.appendChild(this.createHandle(box.minX, box.minY + box.height / 2, 3));
+            }
+        }
+        class MultiLineHandler extends BaseHandler {
+            renderHandles(overlay, shape, box) { shape.points.forEach((p, i) => { overlay.appendChild(this.createHandle(p.x, p.y, i)); }); }
+        }
+        class LineHandler extends BaseHandler {
+            renderUI(overlay, shape, isRotating, currentDeltaAngle, rotationCenter) {
+                const padding = 5; const p1 = shape.points[0]; const p2 = shape.points[1];
+                const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)); const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+                const box = { minX: 0, minY: -padding, width: length, height: padding * 2 };
+                let overlayTransform = `translate(${p1.x}, ${p1.y}) rotate(${angle})`;
+                if (isRotating) overlayTransform = `rotate(${currentDeltaAngle}, ${rotationCenter.x}, ${rotationCenter.y}) ${overlayTransform}`;
+                else {
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    if (match) overlayTransform = `${match[0]} ${overlayTransform}`;
+                }
+                if (overlayTransform) overlay.setAttribute('transform', overlayTransform);
+                this.drawBoundingBox(overlay, box, padding); this.drawRotateHandle(overlay, box, padding); this.renderHandles(overlay, shape, box);
+            }
+            containsPoint(pos, shape, padding, currentDeltaAngle, isRotating, rotationCenter) {
+                const p1 = shape.points[0]; const p2 = shape.points[1];
+                const length = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                let angleDeg = Math.atan2(p2.y - p1.y, p2.x - p1.x) * (180 / Math.PI);
+                if (isRotating) angleDeg += currentDeltaAngle || 0;
+                else { const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+)/); if (match) angleDeg += parseFloat(match[1]); }
+                const dx = pos.x - p1.x; const dy = pos.y - p1.y; const angleRad = -angleDeg * (Math.PI / 180);
+                const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad); const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+                return rx >= -padding && rx <= length + padding && ry >= -padding && ry <= padding;
+            }
+            renderHandles(overlay, shape, box) {
+                const length = Math.sqrt(Math.pow(shape.points[1].x - shape.points[0].x, 2) + Math.pow(shape.points[1].y - shape.points[0].y, 2));
+                overlay.appendChild(this.createHandle(0, 0, 0)); overlay.appendChild(this.createHandle(length, 0, 1));
+            }
+        }
+        class GroupHandler extends BaseHandler {
+            renderUI(overlay, shapes, isRotating, currentDeltaAngle, rotationCenter, calculatedBox) {
+                const padding = 5; const box = calculatedBox; 
+                let overlayTransform = isRotating ? `rotate(${currentDeltaAngle}, ${rotationCenter.x}, ${rotationCenter.y})` : "";
+                if (overlayTransform) overlay.setAttribute('transform', overlayTransform);
+                this.drawBoundingBox(overlay, box, padding); this.drawRotateHandle(overlay, box, padding);
+            }
+            containsPoint(pos, shapes, padding, currentDeltaAngle, isRotating, rotationCenter, calculatedBox) {
+                const box = calculatedBox; const cx = box.minX + box.width / 2; const cy = box.minY + box.height / 2;
+                const angleDeg = isRotating ? (currentDeltaAngle || 0) : 0; 
+                const dx = pos.x - cx; const dy = pos.y - cy; const angleRad = -angleDeg * (Math.PI / 180);
+                const rx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad); const ry = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+                return Math.abs(rx) <= (box.width / 2) + padding && Math.abs(ry) <= (box.height / 2) + padding;
+            }
+        }
+
+        class HandlerFactory {
+            static registry = { line: new LineHandler(), rect: new RectHandler(), circle: new CircleHandler(), multiline: new MultiLineHandler(), group: new GroupHandler() };
+            static getHandler(type) { return this.registry[type]; }
+        }
+
+        // ==========================================
+        // 3. Managers
+        // ==========================================
+        class HistoryManager {
+            static instance = null;
+            static getInstance(state, workspace) {
+                if (!HistoryManager.instance) HistoryManager.instance = new HistoryManager(state, workspace);
+                return HistoryManager.instance;
+            }
+            constructor(state, workspace) { this.state = state; this.workspace = workspace; this.undoStack = []; this.redoStack = []; }
+            saveState() { this.undoStack.push(this.cloneShapes(this.state.shapes)); this.redoStack = []; }
+            cloneShapes(shapes) {
+                return shapes.map(shape => {
+                    const clonedShape = Object.assign(Object.create(Object.getPrototypeOf(shape)), shape);
+                    clonedShape.points = shape.points.map(p => ({...p}));
+                    clonedShape.element = shape.element.cloneNode(true);
+                    clonedShape.element.style.filter = '';
+                    if (shape.type === 'group' && shape.children) {
+                        clonedShape.children = this.cloneShapes(shape.children);
+                        clonedShape.element.innerHTML = ''; 
+                        clonedShape.children.forEach(c => clonedShape.element.appendChild(c.element));
+                    }
+                    return clonedShape;
+                });
+            }
+            undo() {
+                if (this.undoStack.length === 0) return;
+                this.redoStack.push(this.cloneShapes(this.state.shapes));
+                this.restoreState(this.undoStack.pop());
+            }
+            redo() {
+                if (this.redoStack.length === 0) return;
+                this.undoStack.push(this.cloneShapes(this.state.shapes));
+                this.restoreState(this.redoStack.pop());
+            }
+            restoreState(snapshot) {
+                this.state.shapes.forEach(shape => { if (shape.element && shape.element.parentNode) shape.element.parentNode.removeChild(shape.element); });
+                this.state.shapes = this.cloneShapes(snapshot); this.state.selectedShapes = [];
+                this.state.shapes.forEach(shape => { this.workspace.appendChild(shape.element); });
+                if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+            }
+        }
+
+        class ZoomManager {
+            static instance = null;
+            static getInstance(workspaceContainer, workspace) {
+                if (!ZoomManager.instance) ZoomManager.instance = new ZoomManager(workspaceContainer, workspace);
+                return ZoomManager.instance;
+            }
+            constructor(workspaceContainer, workspace) {
+                this.workspaceContainer = workspaceContainer; this.workspace = workspace;
+                this.scale = 1.0; this.MIN_SCALE = 0.1; this.MAX_SCALE = 5.0;
+                this.workspaceContainer.style.justifyContent = 'safe center'; this.workspaceContainer.style.alignItems = 'safe center'; this.workspace.style.margin = 'auto';
+            }
+            setScale(newScale) {
+                this.scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, newScale));
+                const viewBox = this.workspace.getAttribute('viewBox');
+                if (viewBox) {
+                    const parts = viewBox.split(' ');
+                    this.workspace.setAttribute('width', parseFloat(parts[2]) * this.scale);
+                    this.workspace.setAttribute('height', parseFloat(parts[3]) * this.scale);
+                }
+            }
+            fitToScreen() {
+                const containerRect = this.workspaceContainer.getBoundingClientRect();
+                const viewBox = this.workspace.getAttribute('viewBox');
+                let logicalW = 800, logicalH = 600;
+                if (viewBox) { const parts = viewBox.split(' '); logicalW = parseFloat(parts[2]); logicalH = parseFloat(parts[3]); }
+                else { logicalW = parseFloat(this.workspace.getAttribute('width')) || containerRect.width; logicalH = parseFloat(this.workspace.getAttribute('height')) || containerRect.height; }
+                const fitScale = Math.min((containerRect.width - 80) / logicalW, (containerRect.height - 80) / logicalH);
+                this.setScale(fitScale);
+            }
+            handleWheel(e) {
+                if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    const rect = this.workspace.getBoundingClientRect();
+                    const ratioX = (e.clientX - rect.left) / rect.width; const ratioY = (e.clientY - rect.top) / rect.height;
+                    const delta = e.deltaY < 0 ? 1.05 : 0.95; const targetScale = this.scale * delta;
+                    const finalScale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, targetScale));
+                    if (this.scale === finalScale) return;
+                    this.setScale(finalScale);
+                    const newRect = this.workspace.getBoundingClientRect();
+                    this.workspaceContainer.scrollLeft += (newRect.width * ratioX) - (e.clientX - rect.left);
+                    this.workspaceContainer.scrollTop += (newRect.height * ratioY) - (e.clientY - rect.top);
+                }
+            }
+        }
+
+        class ShortcutManager {
+            constructor(state, workspace) { this.state = state; this.workspace = workspace; this.shortcuts = {}; this.init(); }
+            init() {
+                window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+                window.addEventListener('keyup', (e) => this.handleKeyUp(e));
+            }
+            register(key, callback) { this.shortcuts[key.toLowerCase()] = callback; }
+            handleKeyDown(e) {
+                const isCtrlOrMeta = e.ctrlKey || e.metaKey; const key = e.key.toLowerCase();
+                if (isCtrlOrMeta && key === 'z') {
+                    e.preventDefault();
+                    if (this.state.activeTool && typeof this.state.activeTool.handleUndo === 'function' && this.state.activeTool.handleUndo()) return;
+                    if (e.shiftKey) HistoryManager.getInstance(this.state, this.workspace).redo();
+                    else HistoryManager.getInstance(this.state, this.workspace).undo();
+                    if (this.state.activeTool && typeof this.state.activeTool.clearSelection === 'function') this.state.activeTool.clearSelection();
+                    return;
+                }
+                if (isCtrlOrMeta && key === 'y') {
+                    e.preventDefault(); HistoryManager.getInstance(this.state, this.workspace).redo();
+                    if (this.state.activeTool && typeof this.state.activeTool.clearSelection === 'function') this.state.activeTool.clearSelection();
+                    return;
+                }
+                if (!isCtrlOrMeta && this.shortcuts[key]) { e.preventDefault(); this.shortcuts[key](); return; }
+                if (this.state.activeTool && typeof this.state.activeTool.handleKeyDown === 'function') this.state.activeTool.handleKeyDown(e);
+            }
+            handleKeyUp(e) {
+                if (e.key === 'Shift' && this.state.activeTool && typeof this.state.activeTool.handleKeyUp === 'function') this.state.activeTool.handleKeyUp(e);
+            }
+        }
+
+        class ColorManager {
+            constructor(state, workspace) {
+                this.state = state; this.workspace = workspace; this.isUpdatingUI = false;
+                this.recentColors = ['rgba(230, 57, 70, 1)', 'rgba(29, 53, 87, 0.2)', 'rgba(42, 157, 143, 1)', 'rgba(244, 162, 97, 1)'];
+                this.pickers = {};
+                this.initPicker('stroke', 'rgba(230, 57, 70, 1)'); this.initPicker('fill', 'rgba(29, 53, 87, 0.2)');
+                document.addEventListener('mousedown', (e) => {
+                    if (!e.target.closest('.color-picker-container')) document.querySelectorAll('.color-popover').forEach(p => p.classList.remove('active'));
+                });
+            }
+            parseColor(colorStr) {
+                if (!colorStr || colorStr === 'transparent' || colorStr === 'none') return { r: 0, g: 0, b: 0, a: 0, hex: '#000000', isTransparent: true };
+                if (colorStr.startsWith('#')) {
+                    let r = 0, g = 0, b = 0, a = 1;
+                    if (colorStr.length === 4) { r = parseInt(colorStr[1]+colorStr[1], 16); g = parseInt(colorStr[2]+colorStr[2], 16); b = parseInt(colorStr[3]+colorStr[3], 16); }
+                    else if (colorStr.length >= 7) {
+                        r = parseInt(colorStr.slice(1,3), 16); g = parseInt(colorStr.slice(3,5), 16); b = parseInt(colorStr.slice(5,7), 16);
+                        if (colorStr.length === 9) a = parseInt(colorStr.slice(7,9), 16) / 255;
+                    }
+                    return { r, g, b, a, hex: colorStr.slice(0, 7), isTransparent: false };
+                }
+                if (colorStr.startsWith('rgb')) {
+                    const match = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+                    if (match) return { r: parseInt(match[1]), g: parseInt(match[2]), b: parseInt(match[3]), a: match[4] !== undefined ? parseFloat(match[4]) : 1, hex: "#" + (1 << 24 | parseInt(match[1]) << 16 | parseInt(match[2]) << 8 | parseInt(match[3])).toString(16).slice(1), isTransparent: false };
+                }
+                return { r: 0, g: 0, b: 0, a: 1, hex: '#000000', isTransparent: false };
+            }
+            colorToString(c) { return c.isTransparent ? 'transparent' : `rgba(${c.r}, ${c.g}, ${c.b}, ${c.a})`; }
+            initPicker(type, defaultColor) {
+                const ui = { btn: document.getElementById(`${type}-color-btn`), preview: document.getElementById(`${type}-color-preview`), mixedIcon: document.getElementById(`${type}-mixed-icon`), popover: document.getElementById(`${type}-popover`), nativePicker: document.getElementById(`${type}-native-picker`), alphaSlider: document.getElementById(`${type}-alpha-slider`), alphaVal: document.getElementById(`${type}-alpha-val`), textInput: document.getElementById(`${type}-text-input`), transparentChk: document.getElementById(`${type}-transparent-chk`), recentContainer: document.getElementById(`${type}-recent-colors`) };
+                this.pickers[type] = ui;
+                ui.btn.addEventListener('click', () => {
+                    const isActive = ui.popover.classList.contains('active');
+                    document.querySelectorAll('.color-popover').forEach(p => p.classList.remove('active'));
+                    if (!isActive) { ui.popover.classList.add('active'); this.renderRecentColors(type); }
+                });
+                const handleUIChange = (saveHistory) => {
+                    if (this.isUpdatingUI) return;
+                    let colorObj = ui.transparentChk.checked ? { r:0, g:0, b:0, a:0, hex:'#000000', isTransparent:true } : { ...this.parseColor(ui.nativePicker.value), a: parseFloat(ui.alphaSlider.value) };
+                    const colorStr = this.colorToString(colorObj);
+                    this.syncLocalUI(type, colorStr); this.applyColorToShapes(type, colorStr);
+                    if (saveHistory && !colorObj.isTransparent) this.addToHistory(colorStr);
+                };
+                ui.nativePicker.addEventListener('input', () => handleUIChange(false)); ui.nativePicker.addEventListener('change', () => handleUIChange(true));
+                ui.alphaSlider.addEventListener('input', () => handleUIChange(false)); ui.alphaSlider.addEventListener('change', () => handleUIChange(true));
+                ui.transparentChk.addEventListener('change', () => handleUIChange(true));
+                ui.textInput.addEventListener('change', () => {
+                    if (this.isUpdatingUI) return;
+                    const parsed = this.parseColor(ui.textInput.value); const colorStr = this.colorToString(parsed);
+                    this.syncLocalUI(type, colorStr); this.applyColorToShapes(type, colorStr);
+                    if (!parsed.isTransparent) this.addToHistory(colorStr);
+                });
+                if (type === 'stroke') this.state.currentStrokeColor = defaultColor; if (type === 'fill') this.state.currentFillColor = defaultColor;
+                this.syncLocalUI(type, defaultColor); return ui;
+            }
+            syncLocalUI(type, colorStr) {
+                this.isUpdatingUI = true; const ui = this.pickers[type]; const parsed = this.parseColor(colorStr);
+                if (parsed.isTransparent) { ui.preview.style.background = 'transparent'; ui.transparentChk.checked = true; ui.textInput.value = 'transparent'; }
+                else { ui.preview.style.background = colorStr; ui.transparentChk.checked = false; ui.nativePicker.value = parsed.hex; ui.alphaSlider.value = parsed.a; ui.alphaVal.textContent = Math.round(parsed.a * 100) + '%'; ui.textInput.value = colorStr; }
+                ui.mixedIcon.style.display = 'none'; this.isUpdatingUI = false;
+            }
+            addToHistory(colorStr) {
+                if (colorStr === 'transparent') return;
+                this.recentColors = this.recentColors.filter(c => c !== colorStr); this.recentColors.unshift(colorStr);
+                if (this.recentColors.length > 12) this.recentColors.pop();
+                this.renderRecentColors('stroke'); this.renderRecentColors('fill');
+            }
+            renderRecentColors(type) {
+                const container = this.pickers[type].recentContainer; container.innerHTML = '';
+                this.recentColors.forEach(color => {
+                    const swatch = document.createElement('div'); swatch.className = 'recent-color-swatch'; swatch.title = color;
+                    const inner = document.createElement('div'); inner.className = 'recent-color-inner'; inner.style.background = color;
+                    swatch.appendChild(inner);
+                    swatch.addEventListener('click', () => {
+                        this.syncLocalUI(type, color); this.applyColorToShapes(type, color);
+                        this.pickers[type].popover.classList.remove('active'); this.addToHistory(color);
+                    });
+                    container.appendChild(swatch);
+                });
+            }
+            applyColorToShapes(type, colorStr) {
+                if (type === 'stroke') this.state.currentStrokeColor = colorStr; if (type === 'fill') this.state.currentFillColor = colorStr;
+                if (this.state.selectedShapes && this.state.selectedShapes.length > 0) {
+                    HistoryManager.getInstance(this.state, this.workspace).saveState();
+                    this.state.selectedShapes.forEach(shape => { shape.setColors(this.state.currentStrokeColor, this.state.currentFillColor); });
+                }
+            }
+            updateUI(selectedShapes) {
+                this.isUpdatingUI = true;
+                if (!selectedShapes || selectedShapes.length === 0) {
+                    this.pickers.stroke.mixedIcon.style.display = 'none'; this.pickers.fill.mixedIcon.style.display = 'none';
+                    this.isUpdatingUI = false; return;
+                }
+                const strokeSet = new Set(); const fillSet = new Set();
+                selectedShapes.forEach(shape => { const colors = shape.getColors(); strokeSet.add(colors.stroke); fillSet.add(colors.fill); });
+                if (strokeSet.size > 1) { this.pickers.stroke.mixedIcon.style.display = 'flex'; this.pickers.stroke.preview.style.background = 'transparent'; }
+                else this.syncLocalUI('stroke', [...strokeSet][0]);
+                if (fillSet.size > 1) { this.pickers.fill.mixedIcon.style.display = 'flex'; this.pickers.fill.preview.style.background = 'transparent'; }
+                else this.syncLocalUI('fill', [...fillSet][0]);
+                this.isUpdatingUI = false;
+            }
+        }
+
+        // ==========================================
+        // 4. Tools
+        // ==========================================
+        class BaseTool {
+            constructor(state, workspace) { this.state = state; this.workspace = workspace; this.lastMousePos = null; }
+            onActivate() {} onMouseDown(e) {} onMouseMove(e) {} onMouseUp(e) {} onDeactivate() {}
+            handleKeyDown(e) { return false; } handleKeyUp(e) { return false; } onWheel(e) { return false; }
+            getMousePosition(e) {
+                const pt = this.workspace.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+                const svgP = pt.matrixTransform(this.workspace.getScreenCTM().inverse());
+                return { x: svgP.x, y: svgP.y };
+            }
+        }
+
+        class SelectTool extends BaseTool {
+            constructor(state, workspace) {
+                super(state, workspace);
+                this.isMarquee = false; this.isRotating = false; this.isMoving = false; this.isResizing = false;
+                this.resizeHandleIndex = -1; this.marqueeStart = { x: 0, y: 0 }; this.moveStart = { x: 0, y: 0 };
+                this.marqueeElement = null; this.selectionOverlay = null; this.rotationCenter = { x: 0, y: 0 };
+                this.initialAngle = 0; this.currentDeltaAngle = 0; this.visualBox = null; this.targetBox = null;
+                this.isAnimRunning = false; this.lerpFactor = 0.18; this.animThreshold = 0.05;
+            }
+            onActivate() {
+                if (this.state.selectionQueue && this.state.selectionQueue.length > 0) {
+                    this.clearSelection(); 
+                    while (this.state.selectionQueue.length > 0) {
+                        const targetShape = this.state.selectionQueue.shift(); 
+                        if (this.state.shapes.includes(targetShape)) {
+                            this.state.selectedShapes.push(targetShape); targetShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; 
+                        }
+                    }
+                    if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+                }
+                if (this.state.selectedShapes.length > 0) this.renderSelectionUI();
+            }
+            getInverseTransformedPoint(pos, shape) {
+                const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                if (!match) return { x: pos.x, y: pos.y };
+                const angleRad = -parseFloat(match[1]) * (Math.PI / 180); const cx = parseFloat(match[2]); const cy = parseFloat(match[3]);
+                const dx = pos.x - cx; const dy = pos.y - cy;
+                return { x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad), y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad) };
+            }
+            onMouseDown(e) {
+                if (e.button === 2) return;
+                const pos = this.getMousePosition(e); const isShift = e.shiftKey; this.lastMousePos = pos;
+                if (this.state.selectedShapes.length === 1 && e.target.classList.contains('resize-handle')) {
+                    HistoryManager.getInstance(this.state, this.workspace).saveState();
+                    this.isResizing = true; this.resizeHandleIndex = parseInt(e.target.getAttribute('data-index'), 10);
+                    this.renderSelectionUI(); return;
+                }
+                if (this.state.selectedShapes.length > 0 && e.target.classList.contains('rotate-handle')) {
+                    HistoryManager.getInstance(this.state, this.workspace).saveState();
+                    this.isRotating = true; this.prepareRotation(pos); this.renderSelectionUI(); return;
+                }
+                if (this.state.selectedShapes.length > 0 && this.isPointInSelectionBox(pos)) {
+                    HistoryManager.getInstance(this.state, this.workspace).saveState();
+                    this.isMoving = true; this.moveStart = pos; this.renderSelectionUI(); return;
+                }
+                let clickedShape = null;
+                for (let i = this.state.shapes.length - 1; i >= 0; i--) {
+                    if (this.state.shapes[i].containsPoint(pos.x, pos.y)) { clickedShape = this.state.shapes[i]; break; }
+                }
+                if (clickedShape) {
+                    if (this.state.selectedShapes.includes(clickedShape) && !isShift) {
+                        HistoryManager.getInstance(this.state, this.workspace).saveState();
+                        this.isMoving = true; this.moveStart = pos; this.renderSelectionUI(); return;
+                    }
+                    if (isShift) {
+                        const index = this.state.selectedShapes.indexOf(clickedShape);
+                        if (index > -1) { clickedShape.element.style.filter = ''; this.state.selectedShapes.splice(index, 1); }
+                        else { clickedShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; this.state.selectedShapes.push(clickedShape); }
+                    } else {
+                        this.clearSelection(); this.state.selectedShapes.push(clickedShape); clickedShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
+                    }
+                    this.currentDeltaAngle = 0; this.renderSelectionUI();
+                    if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+                } else { if (!isShift) this.clearSelection(); this.startMarquee(pos); }
+            }
+            onMouseMove(e) {
+                const pos = this.getMousePosition(e); this.lastMousePos = pos;
+                if (this.isResizing) { this.applyResize(pos, e.shiftKey); return; }
+                if (this.isRotating) { this.applyRotation(pos, e.shiftKey); this.workspace.style.cursor = 'grabbing'; return; }
+                if (this.isMoving) { this.applyMove(pos); this.workspace.style.cursor = 'move'; return; }
+                if (this.isMarquee && this.marqueeElement) { this.updateMarquee(pos); return; }
+                if (this.state.selectedShapes.length > 0) {
+                    if (e.target.classList.contains('rotate-handle')) { this.workspace.style.cursor = 'grab'; return; }
+                    if (e.target.classList.contains('resize-handle')) { this.workspace.style.cursor = 'crosshair'; return; }
+                    if (this.isPointInSelectionBox(pos)) { this.workspace.style.cursor = 'move'; return; }
+                }
+                let hoverFound = false;
+                for (let i = this.state.shapes.length - 1; i >= 0; i--) {
+                    if (this.state.shapes[i].containsPoint(pos.x, pos.y)) { hoverFound = true; break; }
+                }
+                this.workspace.style.cursor = hoverFound ? 'pointer' : 'default';
+            }
+            onMouseUp(e) {
+                if (e.button === 2) return;
+                let actionCompleted = false;
+                if (this.isResizing) { this.isResizing = false; this.resizeHandleIndex = -1; actionCompleted = true; }
+                if (this.isRotating) { this.isRotating = false; actionCompleted = true; }
+                if (this.isMoving) { this.isMoving = false; actionCompleted = true; }
+                if (this.isMarquee) { this.endMarquee(); this.currentDeltaAngle = 0; actionCompleted = true; }
+                if (actionCompleted) this.renderSelectionUI();
+            }
+            onContextMenu(e) {
+                const cm = document.getElementById('context-menu'); const btnGroup = document.getElementById('menu-group'); const btnUngroup = document.getElementById('menu-ungroup');
+                if (!cm || !btnGroup || !btnUngroup) return;
+                cm.style.display = 'none'; btnGroup.style.display = 'none'; btnUngroup.style.display = 'none';
+                const hasMultiple = this.state.selectedShapes.length > 1;
+                const hasGroup = this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'group';
+                if (!hasMultiple && !hasGroup) return; 
+                cm.style.left = `${e.clientX}px`; cm.style.top = `${e.clientY}px`; cm.style.display = 'block';
+                if (hasMultiple) { btnGroup.style.display = 'block'; btnGroup.onclick = () => { cm.style.display = 'none'; this.groupSelected(); }; }
+                if (hasGroup) { btnUngroup.style.display = 'block'; btnUngroup.onclick = () => { cm.style.display = 'none'; this.ungroupSelected(); }; }
+            }
+            groupSelected() {
+                if (this.state.selectedShapes.length < 2) return;
+                HistoryManager.getInstance(this.state, this.workspace).saveState();
+                const children = [...this.state.selectedShapes];
+                const groupShape = ShapeFactory.createGroup('group_' + Date.now(), children);
+                children.forEach(child => { const idx = this.state.shapes.indexOf(child); if (idx > -1) this.state.shapes.splice(idx, 1); });
+                this.state.shapes.push(groupShape); this.workspace.appendChild(groupShape.element);
+                this.clearSelection(); this.state.selectedShapes.push(groupShape);
+                groupShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; this.renderSelectionUI();
+            }
+
+            // [핵심 픽스] 그룹 해제 시 위험한 Baking을 제거하고 단순히 꺼내기만 함 (무결성 100% 보존)
+            ungroupSelected() {
+                if (this.state.selectedShapes.length !== 1 || this.state.selectedShapes[0].type !== 'group') return;
+                HistoryManager.getInstance(this.state, this.workspace).saveState();
+                const groupShape = this.state.selectedShapes[0];
+                const children = [...groupShape.children];
+
+                const idx = this.state.shapes.indexOf(groupShape);
+                if (idx > -1) this.state.shapes.splice(idx, 1);
+                if (groupShape.element.parentNode) groupShape.element.parentNode.removeChild(groupShape.element);
+
+                this.clearSelection();
+                children.forEach(child => {
+                    this.state.shapes.push(child);
+                    this.workspace.appendChild(child.element);
+                    this.state.selectedShapes.push(child);
+                    child.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
+                });
+                this.renderSelectionUI();
+            }
+
+            renderSelectionUI() {
+                if (this.state.selectedShapes.length === 0) { this.clearSelectionOverlay(); return; }
+                if (this.isMoving || this.isRotating || this.isResizing) { if (this.selectionOverlay) this.clearSelectionOverlay(); return; }
+                let newTarget = this.state.selectedShapes.length === 1 ? HandlerFactory.getHandler(this.state.selectedShapes[0].type).getBox(this.state.selectedShapes[0]) : this.getSelectionBoundingBox();
+                if (!this.visualBox) this.visualBox = { ...newTarget };
+                this.targetBox = newTarget;
+                if (!this.isAnimRunning && this.checkDifference()) this.startAnimLoop();
+                if (!this.isAnimRunning) this.drawSelectionOverlay(this.visualBox);
+            }
+            checkDifference() {
+                if (!this.visualBox || !this.targetBox) return false;
+                return Math.abs(this.visualBox.minX - this.targetBox.minX) > this.animThreshold || Math.abs(this.visualBox.minY - this.targetBox.minY) > this.animThreshold || Math.abs(this.visualBox.width - this.targetBox.width) > this.animThreshold || Math.abs(this.visualBox.height - this.targetBox.height) > this.animThreshold;
+            }
+            startAnimLoop() {
+                if (this.isAnimRunning) return;
+                this.isAnimRunning = true;
+                const loop = () => {
+                    if (!this.isAnimRunning || !this.targetBox || !this.visualBox) return;
+                    this.visualBox.minX += (this.targetBox.minX - this.visualBox.minX) * this.lerpFactor; this.visualBox.minY += (this.targetBox.minY - this.visualBox.minY) * this.lerpFactor;
+                    this.visualBox.width += (this.targetBox.width - this.visualBox.width) * this.lerpFactor; this.visualBox.height += (this.targetBox.height - this.visualBox.height) * this.lerpFactor;
+                    this.visualBox.maxX = this.visualBox.minX + this.visualBox.width; this.visualBox.maxY = this.visualBox.minY + this.visualBox.height;
+                    this.drawSelectionOverlay(this.visualBox);
+                    if (this.checkDifference()) this.animId = requestAnimationFrame(loop);
+                    else { this.visualBox = { ...this.targetBox }; this.drawSelectionOverlay(this.visualBox); this.isAnimRunning = false; }
+                };
+                this.animId = requestAnimationFrame(loop);
+            }
+            drawSelectionOverlay(box) {
+                if (this.selectionOverlay) { this.workspace.removeChild(this.selectionOverlay); this.selectionOverlay = null; }
+                this.selectionOverlay = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                this.selectionOverlay.setAttribute('class', 'selection-ui-layer');
+                if (this.state.selectedShapes.length === 1) HandlerFactory.getHandler(this.state.selectedShapes[0].type).renderUI(this.selectionOverlay, this.state.selectedShapes[0], this.isRotating, this.currentDeltaAngle, this.rotationCenter, box);
+                else HandlerFactory.getHandler('group').renderUI(this.selectionOverlay, this.state.selectedShapes, this.isRotating, this.currentDeltaAngle, this.rotationCenter, box);
+                this.workspace.appendChild(this.selectionOverlay);
+            }
+            clearSelectionOverlay() {
+                if (this.selectionOverlay) { this.workspace.removeChild(this.selectionOverlay); this.selectionOverlay = null; }
+                this.visualBox = null; this.targetBox = null; this.isAnimRunning = false;
+                if (this.animId) cancelAnimationFrame(this.animId);
+            }
+            prepareRotation(pos) {
+                this.initialBoundingBox = this.getSelectionBoundingBox();
+                BaseShape.prepareGroupSnapshot(this.state.selectedShapes);
+                if (this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type !== 'group') {
+                    this.rotationCenter = { x: this.state.selectedShapes[0]._tempStartCx, y: this.state.selectedShapes[0]._tempStartCy };
+                } else {
+                    this.rotationCenter = { x: this.initialBoundingBox.minX + this.initialBoundingBox.width / 2, y: this.initialBoundingBox.minY + this.initialBoundingBox.height / 2 };
+                }
+                this.initialAngle = Math.atan2(pos.y - this.rotationCenter.y, pos.x - this.rotationCenter.x) * (180 / Math.PI);
+            }
+            applyRotation(pos, isShift) {
+                let deltaAngle = Math.atan2(pos.y - this.rotationCenter.y, pos.x - this.rotationCenter.x) * (180 / Math.PI) - this.initialAngle;
+                if (isShift) deltaAngle = Math.round(deltaAngle / 15) * 15;
+                BaseShape.rotateGroup(this.state.selectedShapes, deltaAngle, this.rotationCenter);
+                this.currentDeltaAngle = deltaAngle; this.renderSelectionUI();
+            }
+            applyMove(pos) {
+                const dx = pos.x - this.moveStart.x; const dy = pos.y - this.moveStart.y;
+                BaseShape.moveGroup(this.state.selectedShapes, dx, dy);
+                this.moveStart = pos; this.renderSelectionUI();
+            }
+            applyResize(pos, isShift) {
+                const shape = this.state.selectedShapes[0];
+                shape.resize(this.resizeHandleIndex, this.getInverseTransformedPoint(pos, shape).x, this.getInverseTransformedPoint(pos, shape).y, isShift);
+                this.renderSelectionUI();
+            }
+            getSelectionBoundingBox() {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                const getRot = (shape) => {
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    let angleRad = 0, cx = 0, cy = 0;
+                    if (match) { angleRad = parseFloat(match[1]) * (Math.PI / 180); cx = parseFloat(match[2]); cy = parseFloat(match[3]); }
+                    return shape.points.map(p => {
+                        if (!match) return { x: p.x, y: p.y };
+                        const dx = p.x - cx; const dy = p.y - cy;
+                        return { x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad), y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad) };
+                    });
+                };
+                BaseShape.getFlattenedShapes(this.state.selectedShapes).forEach(shape => {
+                    getRot(shape).forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
+                });
+                return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+            }
+            isPointInSelectionBox(pos) {
+                if (!this.selectionOverlay || this.state.selectedShapes.length === 0) return false;
+                const box = this.visualBox || this.getSelectionBoundingBox();
+                if (this.state.selectedShapes.length === 1) return HandlerFactory.getHandler(this.state.selectedShapes[0].type).containsPoint(pos, this.state.selectedShapes[0], 5, this.currentDeltaAngle, this.isRotating, this.rotationCenter, box);
+                return HandlerFactory.getHandler('group').containsPoint(pos, this.state.selectedShapes, 5, this.currentDeltaAngle, this.isRotating, this.rotationCenter, box);
+            }
+            startMarquee(pos) {
+                this.isMarquee = true; this.marqueeStart = { x: pos.x, y: pos.y };
+                this.marqueeElement = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                this.marqueeElement.setAttribute('fill', 'rgba(0, 102, 204, 0.1)'); this.marqueeElement.setAttribute('stroke', '#0066cc');
+                this.marqueeElement.setAttribute('stroke-width', '1'); this.marqueeElement.setAttribute('stroke-dasharray', '4');
+                this.workspace.appendChild(this.marqueeElement);
+            }
+            updateMarquee(pos) {
+                this.marqueeElement.setAttribute('x', Math.min(this.marqueeStart.x, pos.x)); this.marqueeElement.setAttribute('y', Math.min(this.marqueeStart.y, pos.y));
+                this.marqueeElement.setAttribute('width', Math.abs(this.marqueeStart.x - pos.x)); this.marqueeElement.setAttribute('height', Math.abs(this.marqueeStart.y - pos.y));
+            }
+            endMarquee() {
+                if (!this.marqueeElement) return;
+                const width = parseFloat(this.marqueeElement.getAttribute('width')); const height = parseFloat(this.marqueeElement.getAttribute('height'));
+                if (!width || !height || width === 0 || height === 0) { this.workspace.removeChild(this.marqueeElement); this.marqueeElement = null; this.isMarquee = false; return; }
+                const x = parseFloat(this.marqueeElement.getAttribute('x')); const y = parseFloat(this.marqueeElement.getAttribute('y'));
+                const box = { minX: x, minY: y, maxX: x + width, maxY: y + height };
+                this.state.shapes.forEach(shape => {
+                    let shapeBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+                    const match = (shape.element.getAttribute('transform') || '').match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+                    let angleRad = 0, cx = 0, cy = 0;
+                    if (match) { angleRad = parseFloat(match[1]) * (Math.PI / 180); cx = parseFloat(match[2]); cy = parseFloat(match[3]); }
+                    shape.points.map(p => {
+                        if (!match) return { x: p.x, y: p.y }; const dx = p.x - cx; const dy = p.y - cy; return { x: cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad), y: cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad) };
+                    }).forEach(p => { shapeBox.minX = Math.min(shapeBox.minX, p.x); shapeBox.minY = Math.min(shapeBox.minY, p.y); shapeBox.maxX = Math.max(shapeBox.maxX, p.x); shapeBox.maxY = Math.max(shapeBox.maxY, p.y); });
+                    if (!(shapeBox.maxX < box.minX || shapeBox.minX > box.maxX || shapeBox.maxY < box.minY || shapeBox.minY > box.maxY)) {
+                        if (!this.state.selectedShapes.includes(shape)) { this.state.selectedShapes.push(shape); shape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; }
+                    }
+                });
+                if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+                this.workspace.removeChild(this.marqueeElement); this.marqueeElement = null; this.isMarquee = false;
+            }
+            handleKeyDown(e) {
+                const key = e.key.toLowerCase();
+                if (key === 'delete' || key === 'backspace') {
+                    if (this.state.selectedShapes.length > 0) { HistoryManager.getInstance(this.state, this.workspace).saveState(); this.deleteSelectedShapes(); this.renderSelectionUI(); return true; }
+                }
+                if (e.key === 'Shift' && this.lastMousePos) {
+                    if (this.isResizing) { this.applyResize(this.lastMousePos, true); return true; }
+                    if (this.isRotating) { this.applyRotation(this.lastMousePos, true); return true; }
+                }
+                return false;
+            }
+            handleKeyUp(e) {
+                if (e.key === 'Shift' && this.lastMousePos) {
+                    if (this.isResizing) { this.applyResize(this.lastMousePos, false); return true; }
+                    if (this.isRotating) { this.applyRotation(this.lastMousePos, false); return true; }
+                }
+                return false;
+            }
+            clearSelection() {
+                this.state.selectedShapes.forEach(shape => { shape.element.style.filter = ''; });
+                this.state.selectedShapes = []; this.currentDeltaAngle = 0; this.clearSelectionOverlay();
+                if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+            }
+            deleteSelectedShapes() {
+                this.state.selectedShapes.forEach(shape => {
+                    if (shape.element && shape.element.parentNode) shape.element.parentNode.removeChild(shape.element);
+                    const idx = this.state.shapes.indexOf(shape); if (idx > -1) this.state.shapes.splice(idx, 1);
+                });
+                this.state.selectedShapes = [];
+                if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
+            }
+            onDeactivate() { this.clearSelection(); const cm = document.getElementById('context-menu'); if (cm) cm.style.display = 'none'; super.onDeactivate(); }
+        }
+
+        class DrawToolBase extends BaseTool {
+            constructor(state, workspace, shapeIdCounterRef, shapeType) { super(state, workspace); this.shapeIdCounterRef = shapeIdCounterRef; this.shapeType = shapeType; }
+            onMouseDown(e) {
+                if (e.button === 2) { this.cancelDrawing(); return; }
+                const pos = this.getMousePosition(e); this.lastMousePos = pos;
+                if (!this.state.isDrawing) {
+                    this.state.isDrawing = true; this.state.startX = pos.x; this.state.startY = pos.y; this.shapeIdCounterRef.value++;
+                    const shape = ShapeFactory.createShape(this.shapeType, `shape_${this.shapeIdCounterRef.value}`, this.state.startX, this.state.startY, this.state.currentStrokeWidth, this.state.currentStrokeColor, this.state.currentFillColor);
+                    if (shape) { this.state.currentShape = shape; this.workspace.appendChild(shape.element); }
+                } else {
+                    if (this.state.currentShape) { this.state.currentShape.update(pos.x, pos.y, e.shiftKey); this.completeDrawing(); }
+                }
+            }
+            onMouseMove(e) {
+                if (!this.state.isDrawing || !this.state.currentShape) return;
+                const pos = this.getMousePosition(e); this.lastMousePos = pos; this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
+            }
+            completeDrawing() {
+                HistoryManager.getInstance(this.state, this.workspace).saveState();
+                this.state.shapes.push(this.state.currentShape);
+                if (typeof this.state.requestSelection === 'function') this.state.requestSelection(this.state.currentShape);
+                this.state.isDrawing = false; this.state.currentShape = null; this.lastMousePos = null;
+            }
+            cancelDrawing() {
+                if (!this.state.isDrawing) return;
+                if (this.state.currentShape && this.state.currentShape.element && this.state.currentShape.element.parentNode) this.state.currentShape.element.parentNode.removeChild(this.state.currentShape.element);
+                this.state.isDrawing = false; this.state.currentShape = null; this.lastMousePos = null;
+            }
+            handleKeyDown(e) {
+                const key = e.key.toLowerCase(); if (key === 'escape') { this.cancelDrawing(); return true; }
+                if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, true); return true; }
+                return false;
+            }
+            handleKeyUp(e) {
+                if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false); return true; }
+                return false;
+            }
+            onDeactivate() { if (this.state.isDrawing) this.cancelDrawing(); super.onDeactivate(); }
+        }
+        
+        class RectTool extends DrawToolBase { constructor(state, workspace, counter) { super(state, workspace, counter, 'rect'); } }
+        class CircleTool extends DrawToolBase { constructor(state, workspace, counter) { super(state, workspace, counter, 'circle'); } }
+        class LineTool extends DrawToolBase { constructor(state, workspace, counter) { super(state, workspace, counter, 'line'); } }
+
+        class MultiLineTool extends BaseTool {
+            constructor(state, workspace, shapeIdCounterRef) { super(state, workspace); this.shapeIdCounterRef = shapeIdCounterRef; }
+            onMouseDown(e) {
+                if (e.button === 2) { this.cancelDrawing(); return; }
+                const pos = this.getMousePosition(e); this.lastMousePos = pos;
+                if (!this.state.isDrawing) {
+                    this.state.isDrawing = true; this.shapeIdCounterRef.value++;
+                    const shape = ShapeFactory.createShape('multiline', `shape_${this.shapeIdCounterRef.value}`, pos.x, pos.y, this.state.currentStrokeWidth, this.state.currentStrokeColor, this.state.currentFillColor);
+                    if (shape) { this.state.currentShape = shape; this.workspace.appendChild(shape.element); }
+                } else { if (this.state.currentShape) this.state.currentShape.addPoint(pos.x, pos.y); }
+            }
+            onMouseMove(e) {
+                if (!this.state.isDrawing || !this.state.currentShape) return;
+                const pos = this.getMousePosition(e); this.lastMousePos = pos; this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
+            }
+            completeDrawing() {
+                if (!this.state.isDrawing || !this.state.currentShape) return;
+                this.state.isDrawing = false; const targetShape = this.state.currentShape; this.state.currentShape = null; this.lastMousePos = null;
+                targetShape.finish(); 
+                if (targetShape.points.length >= 2) {
+                    HistoryManager.getInstance(this.state, this.workspace).saveState();
+                    this.state.shapes.push(targetShape);
+                    if (typeof this.state.requestSelection === 'function') this.state.requestSelection(targetShape);
+                    if (typeof this.state.setTool === 'function') this.state.setTool('select');
+                } else { if (targetShape.element && targetShape.element.parentNode) targetShape.element.parentNode.removeChild(targetShape.element); }
+            }
+            cancelDrawing() {
+                if (!this.state.isDrawing) return;
+                if (this.state.currentShape && this.state.currentShape.element && this.state.currentShape.element.parentNode) this.state.currentShape.element.parentNode.removeChild(this.state.currentShape.element);
+                this.state.isDrawing = false; this.state.currentShape = null; this.lastMousePos = null;
+            }
+            handleUndo() {
+                if (this.state.isDrawing && this.state.currentShape) {
+                    if (!this.state.currentShape.removeLastFixedPoint()) this.cancelDrawing();
+                    else if (this.lastMousePos) this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false);
+                    return true;
+                }
+                return false;
+            }
+            handleKeyDown(e) {
+                const key = e.key.toLowerCase(); if (key === 'enter') { this.completeDrawing(); return true; }
+                if (key === 'escape') { this.cancelDrawing(); return true; }
+                if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, true); return true; }
+                return false;
+            }
+            handleKeyUp(e) {
+                if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false); return true; }
+                return false;
+            }
+            onDeactivate() { if (this.state.isDrawing) this.cancelDrawing(); super.onDeactivate(); }
+        }
+
+        // ==========================================
+        // 5. Main Initialization
+        // ==========================================
+        const state = {
+            currentTool: 'select', currentStrokeWidth: 4, currentStrokeColor: '#e63946', currentFillColor: '#1d3557', currentSizePreset: 'fit',
+            isDrawing: false, startX: 0, startY: 0, currentShape: null, selectedShapes: [], selectionQueue: [], shapes: [], activeTool: null, setTool: null,
+            requestSelection: function(shape) { this.selectionQueue.push(shape); }
+        };
+
+        const PRESETS = { 'A4_P': { w: 794, h: 1123 }, 'A4_L': { w: 1123, h: 794 }, 'A3_P': { w: 1123, h: 1587 }, 'A3_L': { w: 1587, h: 1123 }, 'B4_P': { w: 971, h: 1375 }, 'B4_L': { w: 1375, h: 971 } };
+        let shapeIdCounter = { value: 0 };
+        const workspace = document.getElementById('workspace'); const sidebar = document.getElementById('sidebar'); const workspaceContainer = document.getElementById('workspace-container');
+        const strokeWidthInput = document.getElementById('stroke-width-input'); const sizePresetSelect = document.getElementById('canvas-size-preset');
+        const customSizeControls = document.getElementById('custom-size-controls'); const customWidthInput = document.getElementById('custom-width'); const customHeightInput = document.getElementById('custom-height');
+
+        const colorManager = new ColorManager(state, workspace); state.colorManager = colorManager;
+
+        const tools = {
+            'select': new SelectTool(state, workspace), 'line': new LineTool(state, workspace, shapeIdCounter), 'rect': new RectTool(state, workspace, shapeIdCounter),
+            'circle': new CircleTool(state, workspace, shapeIdCounter), 'multiline': new MultiLineTool(state, workspace, shapeIdCounter)
+        };
+
+        function setTool(toolId) {
+            if (state.activeTool) state.activeTool.onDeactivate();
+            state.currentTool = toolId;
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.getElementById(`tool-${toolId}`); if (activeBtn) activeBtn.classList.add('active');
+            state.activeTool = tools[toolId];
+            workspace.style.cursor = toolId === 'select' ? 'default' : 'crosshair';
+            if (state.activeTool && typeof state.activeTool.onActivate === 'function') state.activeTool.onActivate();
+        }
+        state.setTool = setTool;
+
+        const shortcutManager = new ShortcutManager(state, workspace);
+        shortcutManager.register('s', () => setTool('select')); shortcutManager.register('l', () => setTool('line'));
+        shortcutManager.register('r', () => setTool('rect')); shortcutManager.register('c', () => setTool('circle')); shortcutManager.register('p', () => setTool('multiline'));
+
+        const zoomManager = ZoomManager.getInstance(workspaceContainer, workspace);
+        workspaceContainer.addEventListener('wheel', (e) => {
+            if (state.activeTool && typeof state.activeTool.onWheel === 'function' && state.activeTool.onWheel(e)) return;
+            zoomManager.handleWheel(e);
+        }, { passive: false });
+
+        function updateCanvasSize() {
+            let width = 800, height = 600;
+            if (state.currentSizePreset === 'custom') { width = parseInt(customWidthInput.value, 10) || 800; height = parseInt(customHeightInput.value, 10) || 600; }
+            else if (PRESETS[state.currentSizePreset]) { width = PRESETS[state.currentSizePreset].w; height = PRESETS[state.currentSizePreset].h; }
+            else if (state.currentSizePreset === 'fit') { const rect = workspaceContainer.getBoundingClientRect(); width = rect.width > 0 ? rect.width - 80 : 800; height = rect.height > 0 ? rect.height - 80 : 600; }
+            workspace.setAttribute('viewBox', `0 0 ${width} ${height}`); workspace.setAttribute('width', width); workspace.setAttribute('height', height);
+        }
+
+        sizePresetSelect.addEventListener('change', (e) => {
+            state.currentSizePreset = e.target.value;
+            if (state.currentSizePreset === 'custom') customSizeControls.classList.add('visible'); else customSizeControls.classList.remove('visible');
+            updateCanvasSize(); setTimeout(() => { zoomManager.fitToScreen(); }, 50);
+        });
+        [customWidthInput, customHeightInput].forEach(input => { input.addEventListener('change', () => { updateCanvasSize(); setTimeout(() => { zoomManager.fitToScreen(); }, 50); }); });
+        window.addEventListener('load', () => zoomManager.fitToScreen()); window.addEventListener('resize', () => zoomManager.fitToScreen());
+
+        updateCanvasSize(); setTool('select');
+
+        sidebar.addEventListener('click', (e) => { if (e.target.classList.contains('tool-btn')) setTool(e.target.id.replace('tool-', '')); });
+        strokeWidthInput.addEventListener('change', (e) => state.currentStrokeWidth = parseInt(e.target.value, 10) || 4);
+        
+        workspace.addEventListener('mousedown', (e) => { if (state.activeTool) state.activeTool.onMouseDown(e); });
+        workspace.addEventListener('mousemove', (e) => { if (state.activeTool) state.activeTool.onMouseMove(e); });
+        workspace.addEventListener('mouseup', (e) => { if (state.activeTool) state.activeTool.onMouseUp(e); });
+        
+        workspace.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); if (state.activeTool && typeof state.activeTool.onContextMenu === 'function') state.activeTool.onContextMenu(e);
+        });
+        document.addEventListener('mousedown', (e) => {
+            if (!e.target.closest('#context-menu')) { const cm = document.getElementById('context-menu'); if (cm) cm.style.display = 'none'; }
+        });
+
+        document.getElementById('btn-export-svg').addEventListener('click', () => {
+            const viewBox = workspace.getAttribute('viewBox'); let w = 800, h = 600;
+            if (viewBox) { const parts = viewBox.split(' '); w = parseFloat(parts[2]); h = parseFloat(parts[3]); }
+            const oldWidth = workspace.getAttribute('width'); const oldHeight = workspace.getAttribute('height');
+            workspace.setAttribute('width', w); workspace.setAttribute('height', h);
+            let source = new XMLSerializer().serializeToString(workspace);
+            workspace.setAttribute('width', oldWidth); workspace.setAttribute('height', oldHeight);
+            const link = document.createElement("a"); link.href = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source); link.download = `emergency_map_${Date.now()}.svg`; link.click();
+        });
+
+        document.getElementById('btn-export-png').addEventListener('click', () => {
+            const viewBox = workspace.getAttribute('viewBox'); let w = 800, h = 600;
+            if (viewBox) { const parts = viewBox.split(' '); w = parseFloat(parts[2]); h = parseFloat(parts[3]); }
+            const oldWidth = workspace.getAttribute('width'); const oldHeight = workspace.getAttribute('height');
+            workspace.setAttribute('width', w); workspace.setAttribute('height', h);
+            const svgData = new XMLSerializer().serializeToString(workspace);
+            workspace.setAttribute('width', oldWidth); workspace.setAttribute('height', oldHeight);
+            const canvas = document.createElement("canvas"); const ctx = canvas.getContext("2d"); const img = new Image();
+            canvas.width = w; canvas.height = h;
+            const url = URL.createObjectURL(new Blob([svgData], {type: "image/svg+xml;charset=utf-8"}));
+            img.onload = () => {
+                ctx.fillStyle = "white"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.drawImage(img, 0, 0);
+                const link = document.createElement("a"); link.href = canvas.toDataURL("image/png"); link.download = `emergency_map_${Date.now()}.png`; link.click(); URL.revokeObjectURL(url);
+            }; img.src = url;
+        });
+    </script>
 </body>
 </html>

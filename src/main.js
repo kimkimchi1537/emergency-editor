@@ -52,7 +52,6 @@ const customHeightInput = document.getElementById('custom-height');
 const colorManager = new ColorManager(state, workspace);
 state.colorManager = colorManager;
 
-// DrawTool 폐기 후 각 도형 도구를 독립적인 인스턴스로 분리 생성
 const tools = {
     'select': new SelectTool(state, workspace),
     'line': new LineTool(state, workspace, shapeIdCounter),
@@ -198,7 +197,6 @@ strokeWidthInput.addEventListener('change', (e) => {
 
 workspace.addEventListener('mousedown', (e) => {
     if (state.activeTool) {
-        console.log(`[EVENT mousedown] 워크스페이스 클릭 감지 -> 도구 전달 | 버튼: ${e.button}`);
         state.activeTool.onMouseDown(e);
     }
 });
@@ -211,14 +209,25 @@ workspace.addEventListener('mousemove', (e) => {
 
 workspace.addEventListener('mouseup', (e) => {
     if (state.activeTool) {
-        console.log(`[EVENT mouseup] 클릭 종료 감지 -> 도구 전달`);
         state.activeTool.onMouseUp(e);
     }
 });
 
+// 우클릭 메뉴를 위해 활성화된 도구(SelectTool)로 이벤트 위임
 workspace.addEventListener('contextmenu', (e) => {
     e.preventDefault();
-    console.log(`[EVENT contextmenu] 우클릭 감지 - 브라우저 기본 메뉴 차단`);
+    console.log(`[EVENT contextmenu] 우클릭 감지 - 도구로 이벤트 전달`);
+    if (state.activeTool && typeof state.activeTool.onContextMenu === 'function') {
+        state.activeTool.onContextMenu(e);
+    }
+});
+
+// 여백이나 다른 곳 클릭 시 열려있는 컨텍스트 메뉴 닫기
+document.addEventListener('mousedown', (e) => {
+    if (!e.target.closest('#context-menu')) {
+        const cm = document.getElementById('context-menu');
+        if (cm) cm.style.display = 'none';
+    }
 });
 
 document.getElementById('btn-export-svg').addEventListener('click', () => {

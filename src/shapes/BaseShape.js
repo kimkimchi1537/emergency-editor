@@ -9,26 +9,16 @@ export class BaseShape {
         this.fillColor = fillColor;
         this.points = [];
         this.element = null;
-        console.log(`[CLASS BaseShape] 기본 도형 구조체 초기화 | ID: ${id}, Type: ${type}, 선: ${strokeColor}, 채우기: ${fillColor}`);
     }
 
-    createPoint(x, y) {
-        return { x, y };
-    }
-
+    createPoint(x, y) { return { x, y }; }
     update(currentX, currentY, isShift = false) {}
     containsPoint(px, py) { return false; }
-    
     resize(handleIndex, newX, newY, isShift = false) {}
 
     move(dx, dy) {
-        this.points.forEach(p => {
-            p.x += dx;
-            p.y += dy;
-        });
-
+        this.points.forEach(p => { p.x += dx; p.y += dy; });
         this.updateAttributes();
-
         const currentTransform = this.element.getAttribute('transform') || '';
         const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
         if (match) {
@@ -37,24 +27,18 @@ export class BaseShape {
             const newCy = parseFloat(match[3]) + dy;
             this.element.setAttribute('transform', `rotate(${angle}, ${newCx}, ${newCy})`);
         }
-
-        console.log(`[METHOD move] ${this.id}(${this.type}) 자체 이동 수행 완료 | dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)}`);
     }
 
     setRotation(angle, cx, cy) {
         this.element.setAttribute('transform', `rotate(${angle}, ${cx}, ${cy})`);
-        console.log(`[METHOD setRotation] ${this.id}(${this.type}) 자체 회전 수행 완료 | 각도=${angle.toFixed(1)}, 중심=(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
     }
 
-    getColors() {
-        return { stroke: this.strokeColor, fill: this.fillColor };
-    }
-
+    getColors() { return { stroke: this.strokeColor, fill: this.fillColor }; }
+    
     setColors(strokeColor, fillColor) {
         this.strokeColor = strokeColor;
         this.fillColor = fillColor;
         this.applyColors();
-        console.log(`[METHOD setColors] ${this.id}(${this.type}) 색상 변경 완료 | 선: ${strokeColor}, 채우기: ${fillColor}`);
     }
 
     applyColors() {
@@ -63,7 +47,6 @@ export class BaseShape {
             if (this.fillColor === 'transparent') {
                 this.element.setAttribute('fill', 'none');
             } else {
-                // 채우기 적용 시 자동으로 0.2 반투명 처리
                 const r = parseInt(this.fillColor.slice(1, 3), 16) || 0;
                 const g = parseInt(this.fillColor.slice(3, 5), 16) || 0;
                 const b = parseInt(this.fillColor.slice(5, 7), 16) || 0;
@@ -73,7 +56,6 @@ export class BaseShape {
     }
 
     updateAttributes() {
-        console.warn(`[WARNING] ${this.type} 클래스에 updateAttributes()가 오버라이딩되지 않았습니다. 다형성이 깨질 수 있습니다.`);
         if (this.type === 'arrow' && this.points.length >= 2) {
             this.element.setAttribute('x1', this.points[0].x);
             this.element.setAttribute('y1', this.points[0].y);
@@ -82,12 +64,22 @@ export class BaseShape {
         }
     }
 
-    // ==========================================
-    // [정적 유틸리티] 다중 선택(임시 그룹) 연산 위임부
-    // ==========================================
+    // 그룹 내 자식 요소들의 수학적 병합 처리를 위한 정적 메서드
+    static getFlattenedShapes(shapes) {
+        let flattened = [];
+        shapes.forEach(shape => {
+            if (shape.type === 'group') {
+                flattened = flattened.concat(this.getFlattenedShapes(shape.children));
+            } else {
+                flattened.push(shape);
+            }
+        });
+        return flattened;
+    }
 
     static prepareGroupSnapshot(shapes) {
-        shapes.forEach(shape => {
+        const flatShapes = this.getFlattenedShapes(shapes);
+        flatShapes.forEach(shape => {
             shape._tempStartPoints = shape.points.map(p => ({ x: p.x, y: p.y }));
             const currentTransform = shape.element.getAttribute('transform') || '';
             const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
@@ -107,15 +99,15 @@ export class BaseShape {
                 shape._tempStartCy = minY + (maxY - minY) / 2;
             }
         });
-        console.log(`[BASESHAPE-STATIC] 임시 그룹 회전용 스냅샷 저장 완료 | 대상: ${shapes.length}개 도형`);
     }
 
     static rotateGroup(shapes, deltaAngle, rotationCenter) {
+        const flatShapes = this.getFlattenedShapes(shapes);
         const deltaRad = deltaAngle * (Math.PI / 180);
         const cosA = Math.cos(deltaRad);
         const sinA = Math.sin(deltaRad);
 
-        shapes.forEach(shape => {
+        flatShapes.forEach(shape => {
             shape.points.forEach((p, i) => {
                 p.x = shape._tempStartPoints[i].x;
                 p.y = shape._tempStartPoints[i].y;
@@ -133,15 +125,21 @@ export class BaseShape {
             const moveY = newCy - shape._tempStartCy;
 
             shape.move(moveX, moveY);
-
             const newRotation = shape._tempStartAngle + deltaAngle;
             shape.setRotation(newRotation, newCx, newCy);
         });
-        console.log(`[BASESHAPE-STATIC] 임시 그룹 물리적 회전(공전+자전) 연산 적용 완료 | 변위각: ${deltaAngle.toFixed(1)}도`);
+        
+        shapes.forEach(s => {
+            if(s.type === 'group') s.updateAttributes();
+        });
     }
 
     static moveGroup(shapes, dx, dy) {
-        shapes.forEach(shape => shape.move(dx, dy));
-        console.log(`[BASESHAPE-STATIC] 임시 그룹 일괄 이동 적용 완료 | dx=${dx.toFixed(1)}, dy=${dy.toFixed(1)}`);
+        const flatShapes = this.getFlattenedShapes(shapes);
+        flatShapes.forEach(shape => shape.move(dx, dy));
+        
+        shapes.forEach(s => {
+            if(s.type === 'group') s.updateAttributes();
+        });
     }
 }

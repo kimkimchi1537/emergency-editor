@@ -2,13 +2,15 @@ import { LineShape } from '../shapes/LineShape.js';
 import { RectShape } from '../shapes/RectShape.js';
 import { CircleShape } from '../shapes/CircleShape.js';
 import { MultiLineShape } from '../shapes/MultiLineShape.js';
+import { GroupShape } from '../shapes/GroupShape.js';
 
 export class ShapeFactory {
     static registry = {
         line: LineShape,
         rect: RectShape,
         circle: CircleShape,
-        multiline: MultiLineShape
+        multiline: MultiLineShape,
+        group: GroupShape
     };
 
     static createShape(type, id, startX, startY, strokeWidth, strokeColor, fillColor) {
@@ -24,5 +26,10 @@ export class ShapeFactory {
         const instance = new ShapeClass(id, startX, startY, strokeWidth, strokeColor, fillColor);
         console.log("[FACTORY] 인스턴스 반환 완료");
         return instance;
+    }
+
+    static createGroup(id, children) {
+        console.log(`[FACTORY] 그룹 생성 요청 | ID: ${id}`);
+        return new GroupShape(id, children);
     }
 }

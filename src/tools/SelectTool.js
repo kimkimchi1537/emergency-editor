@@ -1,6 +1,7 @@
 import { BaseTool } from './BaseTool.js';
 import { HistoryManager } from '../managers/HistoryManager.js';
 import { HandlerFactory } from '../factory/HandlerFactory.js';
+import { ShapeFactory } from '../factory/ShapeFactory.js';
 import { BaseShape } from '../shapes/BaseShape.js';
 
 export class SelectTool extends BaseTool {
@@ -26,29 +27,25 @@ export class SelectTool extends BaseTool {
         this.lerpFactor = 0.18; 
         this.animThreshold = 0.05; 
 
-        console.log(`[CLASS SelectTool] 선택 도구 초기화 | OBB/AABB 트랜지션 및 조작 중 숨김 로직 적용`);
+        console.log(`[CLASS SelectTool] 선택 도구 초기화 | 컨텍스트 메뉴 및 그룹화 로직 지원 완료`);
     }
 
     onActivate() {
         console.log(`[SELECT-TOOL] 도구 활성화 생명주기 진입 | 선택 대기열 큐(Queue) 확인 시작`);
         
         if (this.state.selectionQueue && this.state.selectionQueue.length > 0) {
-            console.log(`[SELECT-TOOL] 대기열 감지 (크기: ${this.state.selectionQueue.length}) - 대기열 소비 및 자동 선택 처리`);
             this.clearSelection(); 
-            
             while (this.state.selectionQueue.length > 0) {
                 const targetShape = this.state.selectionQueue.shift(); 
                 if (this.state.shapes.includes(targetShape)) {
                     this.state.selectedShapes.push(targetShape);
                     targetShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)'; 
-                    console.log(`[SELECT-TOOL] 큐 소비: 도형 ID ${targetShape.id} 선택 상태로 전환`);
                 }
             }
             if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
         }
 
         if (this.state.selectedShapes.length > 0) {
-            console.log(`[SELECT-TOOL] 활성화 시점 선택 객체 존재 - UI 렌더링 엔진 즉시 트리거`);
             this.renderSelectionUI();
         }
         
@@ -73,6 +70,8 @@ export class SelectTool extends BaseTool {
     }
 
     onMouseDown(e) {
+        if (e.button === 2) return; // 우클릭(컨텍스트 메뉴) 방해 금지
+
         const pos = this.getMousePosition(e);
         const isShift = e.shiftKey;
         this.lastMousePos = pos;
@@ -82,7 +81,6 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isResizing = true;
             this.resizeHandleIndex = index;
-            // 핸들을 누르자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
             this.renderSelectionUI();
             return;
         }
@@ -91,7 +89,6 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isRotating = true;
             this.prepareRotation(pos);
-            // 회전 핸들을 누르자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
             this.renderSelectionUI();
             return;
         }
@@ -100,7 +97,6 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isMoving = true;
             this.moveStart = pos;
-            // 박스 내부를 잡아 이동을 시작하자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
             this.renderSelectionUI();
             return;
         }
@@ -119,7 +115,6 @@ export class SelectTool extends BaseTool {
                 HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.isMoving = true;
                 this.moveStart = pos;
-                // 이미 선택된 도형을 눌러 이동을 시작할 때 즉시 UI 숨김 처리를 위해 렌더링 호출
                 this.renderSelectionUI();
                 return;
             }
@@ -202,6 +197,8 @@ export class SelectTool extends BaseTool {
     }
 
     onMouseUp(e) {
+        if (e.button === 2) return;
+
         let actionCompleted = false;
 
         if (this.isResizing) {
@@ -229,9 +226,162 @@ export class SelectTool extends BaseTool {
         }
 
         if (actionCompleted) {
-            console.log(`[SELECT-TOOL] 마우스 조작(완료) - AABB 박스 재표시 렌더링`);
             this.renderSelectionUI();
         }
+    }
+
+    onContextMenu(e) {
+        const cm = document.getElementById('context-menu');
+        const btnGroup = document.getElementById('menu-group');
+        const btnUngroup = document.getElementById('menu-ungroup');
+        
+        if (!cm || !btnGroup || !btnUngroup) return;
+
+        cm.style.display = 'none';
+        btnGroup.style.display = 'none';
+        btnUngroup.style.display = 'none';
+
+        const hasMultiple = this.state.selectedShapes.length > 1;
+        const hasGroup = this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'group';
+
+        if (!hasMultiple && !hasGroup) return; 
+
+        cm.style.left = `${e.clientX}px`;
+        cm.style.top = `${e.clientY}px`;
+        cm.style.display = 'block';
+
+        if (hasMultiple) {
+            btnGroup.style.display = 'block';
+            btnGroup.onclick = () => {
+                cm.style.display = 'none';
+                this.groupSelected();
+            };
+        }
+
+        if (hasGroup) {
+            btnUngroup.style.display = 'block';
+            btnUngroup.onclick = () => {
+                cm.style.display = 'none';
+                this.ungroupSelected();
+            };
+        }
+    }
+
+    groupSelected() {
+        if (this.state.selectedShapes.length < 2) return;
+        HistoryManager.getInstance(this.state, this.workspace).saveState();
+
+        const groupId = 'group_' + Date.now();
+        const children = [...this.state.selectedShapes];
+        
+        const groupShape = ShapeFactory.createGroup(groupId, children);
+        
+        children.forEach(child => {
+            const idx = this.state.shapes.indexOf(child);
+            if (idx > -1) this.state.shapes.splice(idx, 1);
+        });
+
+        this.state.shapes.push(groupShape);
+        this.workspace.appendChild(groupShape.element);
+
+        this.clearSelection();
+        this.state.selectedShapes.push(groupShape);
+        groupShape.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
+        this.renderSelectionUI();
+        console.log(`[SELECT-TOOL] 영구 그룹화 완료 | ${children.length}개 도형 -> ${groupId}`);
+    }
+
+    ungroupSelected() {
+        if (this.state.selectedShapes.length !== 1 || this.state.selectedShapes[0].type !== 'group') return;
+        HistoryManager.getInstance(this.state, this.workspace).saveState();
+
+        const groupShape = this.state.selectedShapes[0];
+        const children = [...groupShape.children];
+
+        // 그룹에 회전이 걸려있었다면 해제 전에 수학적 연산으로 자식들에게 회전값을 영구 적용(Baking)
+        this.bakeGroupTransform(groupShape);
+
+        const idx = this.state.shapes.indexOf(groupShape);
+        if (idx > -1) this.state.shapes.splice(idx, 1);
+        if (groupShape.element.parentNode) {
+            groupShape.element.parentNode.removeChild(groupShape.element);
+        }
+
+        this.clearSelection();
+
+        children.forEach(child => {
+            this.state.shapes.push(child);
+            this.workspace.appendChild(child.element);
+            this.state.selectedShapes.push(child);
+            child.element.style.filter = 'drop-shadow(0 0 5px #0066cc)';
+        });
+
+        this.renderSelectionUI();
+        console.log(`[SELECT-TOOL] 영구 그룹 해제 완료 | ${children.length}개 독립 도형으로 복원`);
+    }
+
+    bakeGroupTransform(groupShape) {
+        const currentTransform = groupShape.element.getAttribute('transform') || '';
+        const match = currentTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+        if (!match) return; 
+
+        console.log(`[SELECT-TOOL] 그룹 해제 중 회전 속성 감지 - 자식 요소에 좌표/회전 베이킹(Baking) 수행`);
+
+        const gAngleDeg = parseFloat(match[1]);
+        const gCx = parseFloat(match[2]);
+        const gCy = parseFloat(match[3]);
+        const gAngleRad = gAngleDeg * (Math.PI / 180);
+        const cosA = Math.cos(gAngleRad);
+        const sinA = Math.sin(gAngleRad);
+
+        const rotatePoint = (x, y) => {
+            const dx = x - gCx;
+            const dy = y - gCy;
+            return {
+                x: gCx + dx * cosA - dy * sinA,
+                y: gCy + dx * sinA + dy * cosA
+            };
+        };
+
+        groupShape.children.forEach(child => {
+            child.points.forEach(p => {
+                const rp = rotatePoint(p.x, p.y);
+                p.x = rp.x;
+                p.y = rp.y;
+            });
+
+            const cTransform = child.element.getAttribute('transform') || '';
+            const cMatch = cTransform.match(/rotate\(([-\d.]+),\s*([-\d.]+),\s*([-\d.]+)\)/);
+            let cAngle = 0, cCx = 0, cCy = 0;
+            
+            if (cMatch) {
+                cAngle = parseFloat(cMatch[1]);
+                cCx = parseFloat(cMatch[2]);
+                cCy = parseFloat(cMatch[3]);
+                const rcCenter = rotatePoint(cCx, cCy);
+                cCx = rcCenter.x;
+                cCy = rcCenter.y;
+            } else {
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                child.points.forEach(p => {
+                    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                });
+                cCx = minX + (maxX - minX) / 2;
+                cCy = minY + (maxY - minY) / 2;
+            }
+
+            const newCAngle = cAngle + gAngleDeg;
+            child.updateAttributes();
+            
+            if (newCAngle !== 0) {
+                child.element.setAttribute('transform', `rotate(${newCAngle}, ${cCx}, ${cCy})`);
+            } else {
+                child.element.removeAttribute('transform');
+            }
+        });
+
+        groupShape.element.removeAttribute('transform');
     }
 
     renderSelectionUI() {
@@ -240,36 +390,29 @@ export class SelectTool extends BaseTool {
             return;
         }
 
-        // [추가] 이동, 회전, 또는 핸들 조작(리사이즈) 중이면 UI를 숨기고 조작 중 렌더링 조기 종료
         if (this.isMoving || this.isRotating || this.isResizing) {
             if (this.selectionOverlay) {
-                console.log(`[SELECT-TOOL] 조작 중(Move/Rotate/Resize) - AABB 박스 임시 숨김 처리`);
                 this.clearSelectionOverlay();
             }
             return;
         }
 
-        // 1. [핵심 수정부] 이중 회전/팽창 버그 방지
         let newTarget;
         if (this.state.selectedShapes.length === 1) {
             newTarget = HandlerFactory.getHandler(this.state.selectedShapes[0].type).getBox(this.state.selectedShapes[0]);
         } else {
-            // 마우스를 놓아 회전이 끝났을 때만 새로운 도형 위치를 감싸는 AABB를 재계산함.
             newTarget = this.getSelectionBoundingBox();
         }
 
-        // 2. 초기화 또는 목표 갱신
         if (!this.visualBox) {
             this.visualBox = { ...newTarget };
         }
         this.targetBox = newTarget;
 
-        // 3. 이전 상태와 현재 상태의 수치가 다르다면 애니메이션 엔진 트리거
         if (!this.isAnimRunning && this.checkDifference()) {
             this.startAnimLoop();
         }
 
-        // 4. 즉시 렌더링 (루프 밖에서도 현재 visualBox 기반으로 그려야 함)
         if (!this.isAnimRunning) {
             this.drawSelectionOverlay(this.visualBox);
         }
@@ -290,7 +433,6 @@ export class SelectTool extends BaseTool {
         const loop = () => {
             if (!this.isAnimRunning || !this.targetBox || !this.visualBox) return;
 
-            // 선형 보간(Lerp) 연산 적용
             this.visualBox.minX += (this.targetBox.minX - this.visualBox.minX) * this.lerpFactor;
             this.visualBox.minY += (this.targetBox.minY - this.visualBox.minY) * this.lerpFactor;
             this.visualBox.width += (this.targetBox.width - this.visualBox.width) * this.lerpFactor;
@@ -298,13 +440,11 @@ export class SelectTool extends BaseTool {
             this.visualBox.maxX = this.visualBox.minX + this.visualBox.width;
             this.visualBox.maxY = this.visualBox.minY + this.visualBox.height;
 
-            // 보간된 중간값으로 UI 갱신
             this.drawSelectionOverlay(this.visualBox);
 
             if (this.checkDifference()) {
                 this.animId = requestAnimationFrame(loop);
             } else {
-                // 수렴 완료 시 물리 목표값으로 스냅 고정
                 this.visualBox = { ...this.targetBox };
                 this.drawSelectionOverlay(this.visualBox);
                 this.isAnimRunning = false;
@@ -583,6 +723,8 @@ export class SelectTool extends BaseTool {
 
     onDeactivate() {
         this.clearSelection();
+        const cm = document.getElementById('context-menu');
+        if (cm) cm.style.display = 'none';
         super.onDeactivate();
     }
 }
