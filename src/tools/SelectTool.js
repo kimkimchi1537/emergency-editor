@@ -26,7 +26,7 @@ export class SelectTool extends BaseTool {
         this.lerpFactor = 0.18; 
         this.animThreshold = 0.05; 
 
-        console.log(`[CLASS SelectTool] 선택 도구 초기화 | Double-Rotation 버그 픽스 및 OBB/AABB 트랜지션 로직 적용`);
+        console.log(`[CLASS SelectTool] 선택 도구 초기화 | OBB/AABB 트랜지션 및 조작 중 숨김 로직 적용`);
     }
 
     onActivate() {
@@ -81,6 +81,8 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isResizing = true;
             this.resizeHandleIndex = index;
+            // 핸들을 누르자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
+            this.renderSelectionUI();
             return;
         }
 
@@ -88,6 +90,8 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isRotating = true;
             this.prepareRotation(pos);
+            // 회전 핸들을 누르자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
+            this.renderSelectionUI();
             return;
         }
 
@@ -95,6 +99,8 @@ export class SelectTool extends BaseTool {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isMoving = true;
             this.moveStart = pos;
+            // 박스 내부를 잡아 이동을 시작하자마자 즉시 UI 숨김 처리를 위해 렌더링 호출
+            this.renderSelectionUI();
             return;
         }
 
@@ -112,6 +118,8 @@ export class SelectTool extends BaseTool {
                 HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.isMoving = true;
                 this.moveStart = pos;
+                // 이미 선택된 도형을 눌러 이동을 시작할 때 즉시 UI 숨김 처리를 위해 렌더링 호출
+                this.renderSelectionUI();
                 return;
             }
 
@@ -148,11 +156,13 @@ export class SelectTool extends BaseTool {
 
         if (this.isRotating) {
             this.applyRotation(pos, e.shiftKey);
+            this.workspace.style.cursor = 'grabbing';
             return;
         }
 
         if (this.isMoving) {
             this.applyMove(pos);
+            this.workspace.style.cursor = 'move';
             return;
         }
 
@@ -188,24 +198,34 @@ export class SelectTool extends BaseTool {
     }
 
     onMouseUp(e) {
+        let actionCompleted = false;
+
         if (this.isResizing) {
             this.isResizing = false;
             this.resizeHandleIndex = -1;
             this.syncFinalTransforms();
+            actionCompleted = true;
         }
 
         if (this.isRotating) {
             this.isRotating = false;
             this.syncFinalTransforms();
+            actionCompleted = true;
         }
 
         if (this.isMoving) {
             this.isMoving = false;
+            actionCompleted = true;
         }
 
         if (this.isMarquee) {
             this.endMarquee();
             this.currentDeltaAngle = 0;
+            actionCompleted = true;
+        }
+
+        if (actionCompleted) {
+            console.log(`[SELECT-TOOL] 마우스 조작(완료) - AABB 박스 재표시 렌더링`);
             this.renderSelectionUI();
         }
     }
@@ -216,18 +236,22 @@ export class SelectTool extends BaseTool {
             return;
         }
 
+        // [추가] 이동, 회전, 또는 핸들 조작(리사이즈) 중이면 UI를 숨기고 조작 중 렌더링 조기 종료
+        if (this.isMoving || this.isRotating || this.isResizing) {
+            if (this.selectionOverlay) {
+                console.log(`[SELECT-TOOL] 조작 중(Move/Rotate/Resize) - AABB 박스 임시 숨김 처리`);
+                this.clearSelectionOverlay();
+            }
+            return;
+        }
+
         // 1. [핵심 수정부] 이중 회전/팽창 버그 방지
         let newTarget;
         if (this.state.selectedShapes.length === 1) {
             newTarget = HandlerFactory.getHandler(this.state.selectedShapes[0].type).getBox(this.state.selectedShapes[0]);
         } else {
-            // 그룹 회전 중(Drag)일 때는 강체(OBB) 유지를 위해 초기 박스 크기를 그대로 사용!
             // 마우스를 놓아 회전이 끝났을 때만 새로운 도형 위치를 감싸는 AABB를 재계산함.
-            if (this.isRotating && this.initialBoundingBox) {
-                newTarget = { ...this.initialBoundingBox };
-            } else {
-                newTarget = this.getSelectionBoundingBox();
-            }
+            newTarget = this.getSelectionBoundingBox();
         }
 
         // 2. 초기화 또는 목표 갱신
@@ -371,11 +395,7 @@ export class SelectTool extends BaseTool {
             const match = currentTransform.match(/rotate\(([-\d.]+)/);
             shape._lastRotation = match ? parseFloat(match[1]) : 0;
         });
-        
-        // 회전 종료 시 새로운 AABB 계산 및 애니메이션 트리거
-        if (this.state.selectedShapes.length > 1) {
-            this.renderSelectionUI(); 
-        }
+        console.log(`[SELECT-TOOL] 조작 완료 - 최종 트랜스폼 동기화 완료`);
     }
 
     getRotatedPoints(shape) {
