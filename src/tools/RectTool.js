@@ -7,6 +7,7 @@ export class RectTool extends BaseTool {
         super(state, workspace);
         this.shapeIdCounterRef = shapeIdCounterRef;
         this.shapeType = 'rect';
+        console.log(`[CLASS RectTool] 사각형 도구 초기화 (드래그 방식)`);
     }
 
     onMouseDown(e) {
@@ -24,6 +25,7 @@ export class RectTool extends BaseTool {
             this.state.startY = pos.y;
             
             this.shapeIdCounterRef.value++;
+            console.log(`[RECT-TOOL] 드래그 시작 | ID: shape_${this.shapeIdCounterRef.value}, 원점:(${this.state.startX.toFixed(1)}, ${this.state.startY.toFixed(1)})`);
             
             const shape = ShapeFactory.createShape(
                 this.shapeType,
@@ -33,17 +35,12 @@ export class RectTool extends BaseTool {
                 this.state.currentStrokeWidth,
                 this.state.currentStrokeColor,
                 this.state.currentFillColor,
-                { opacity: this.state.currentOpacity } // 투명도 정보 전달
+                { opacity: this.state.currentOpacity }
             );
 
             if (shape) {
                 this.state.currentShape = shape;
                 this.workspace.appendChild(shape.element);
-            }
-        } else {
-            if (this.state.currentShape) {
-                this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
-                this.completeDrawing();
             }
         }
     }
@@ -55,7 +52,13 @@ export class RectTool extends BaseTool {
         this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
     }
 
-    onMouseUp(e) {}
+    onMouseUp(e) {
+        if (e.button === 2) return;
+        if (this.state.isDrawing && this.state.currentShape) {
+            console.log(`[RECT-TOOL] 드래그 종료 - 도형 생성 완료`);
+            this.completeDrawing();
+        }
+    }
 
     completeDrawing() {
         HistoryManager.getInstance(this.state, this.workspace).saveState();
@@ -69,7 +72,7 @@ export class RectTool extends BaseTool {
         this.state.currentShape = null;
         this.lastMousePos = null;
         
-        if (this.state.renderLayers) this.state.renderLayers(); // [추가] 레이어 렌더링 훅
+        if (this.state.renderLayers) this.state.renderLayers();
     }
 
     cancelDrawing() {

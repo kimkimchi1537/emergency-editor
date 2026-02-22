@@ -7,7 +7,7 @@ export class ImageTool extends BaseTool {
         super(state, workspace);
         this.shapeIdCounterRef = shapeIdCounterRef;
         this.shapeType = 'image';
-        console.log(`[CLASS ImageTool] 이미지 삽입 도구 초기화 완료`);
+        console.log(`[CLASS ImageTool] 이미지 삽입 도구 초기화 (드래그 방식)`);
     }
 
     onMouseDown(e) {
@@ -32,7 +32,7 @@ export class ImageTool extends BaseTool {
             
             this.shapeIdCounterRef.value++;
             
-            console.log(`[IMAGE-TOOL] 이미지 영역 드래그 시작 | ID: shape_${this.shapeIdCounterRef.value}`);
+            console.log(`[IMAGE-TOOL] 드래그 시작 | ID: shape_${this.shapeIdCounterRef.value}`);
             const shape = ShapeFactory.createShape(
                 this.shapeType,
                 `shape_${this.shapeIdCounterRef.value}`,
@@ -51,11 +51,6 @@ export class ImageTool extends BaseTool {
                 this.state.currentShape = shape;
                 this.workspace.appendChild(shape.element);
             }
-        } else {
-            if (this.state.currentShape) {
-                this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
-                this.completeDrawing();
-            }
         }
     }
 
@@ -67,8 +62,10 @@ export class ImageTool extends BaseTool {
     }
 
     onMouseUp(e) {
+        if (e.button === 2) return;
         // 드래그 방식 적용
         if (this.state.isDrawing && this.state.currentShape) {
+            console.log(`[IMAGE-TOOL] 드래그 종료 - 이미지 생성 완료`);
             this.completeDrawing();
         }
     }
