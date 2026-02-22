@@ -13,14 +13,13 @@ export class HistoryManager {
         this.workspace = workspace;
         this.undoStack = [];
         this.redoStack = [];
-        console.log(`[CLASS HistoryManager] 싱글톤 히스토리 매니저 가동 완료 | 상태 스냅샷 시스템 준비`);
+        console.log(`[CLASS HistoryManager] 싱글톤 히스토리 매니저 가동 완료`);
     }
 
     saveState() {
         const snapshot = this.cloneShapes(this.state.shapes);
         this.undoStack.push(snapshot);
         this.redoStack = [];
-        console.log(`[HISTORY] 상태 저장 완료 | Undo 스택: ${this.undoStack.length}개`);
     }
 
     cloneShapes(shapes) {
@@ -28,7 +27,7 @@ export class HistoryManager {
             const clonedShape = Object.assign(Object.create(Object.getPrototypeOf(shape)), shape);
             clonedShape.points = shape.points.map(p => ({...p}));
             clonedShape.element = shape.element.cloneNode(true);
-            clonedShape.element.style.filter = '';
+            clonedShape.isLocked = shape.isLocked; // [신규] Undo/Redo 시 잠금 상태도 100% 복제
             
             // 그룹(GroupShape)인 경우 자식 객체까지 재귀적으로 깊은 복사(Deep Clone) 수행
             if (shape.type === 'group' && shape.children) {
@@ -42,31 +41,17 @@ export class HistoryManager {
     }
 
     undo() {
-        if (this.undoStack.length === 0) {
-            console.log(`[HISTORY] Undo 거부: 스택이 비어있음`);
-            return;
-        }
-        
+        if (this.undoStack.length === 0) return;
         const currentState = this.cloneShapes(this.state.shapes);
         this.redoStack.push(currentState);
-        
-        const previousState = this.undoStack.pop();
-        this.restoreState(previousState);
-        console.log(`[HISTORY] Undo 실행 완료 | 남은 Undo: ${this.undoStack.length}개, Redo: ${this.redoStack.length}개`);
+        this.restoreState(this.undoStack.pop());
     }
 
     redo() {
-        if (this.redoStack.length === 0) {
-            console.log(`[HISTORY] Redo 거부: 스택이 비어있음`);
-            return;
-        }
-
+        if (this.redoStack.length === 0) return;
         const currentState = this.cloneShapes(this.state.shapes);
         this.undoStack.push(currentState);
-
-        const nextState = this.redoStack.pop();
-        this.restoreState(nextState);
-        console.log(`[HISTORY] Redo 실행 완료 | 남은 Undo: ${this.undoStack.length}개, Redo: ${this.redoStack.length}개`);
+        this.restoreState(this.redoStack.pop());
     }
 
     restoreState(snapshot) {
@@ -85,6 +70,10 @@ export class HistoryManager {
 
         if (this.state.colorManager) {
             this.state.colorManager.updateUI(this.state.selectedShapes);
+        }
+        
+        if (this.state.renderLayers) {
+            this.state.renderLayers();
         }
     }
 }

@@ -9,6 +9,10 @@ export class BaseShape {
         this.fillColor = fillColor;
         this.points = [];
         this.element = null;
+        this.opacity = 1; 
+        this.isLocked = false; 
+        
+        console.log(`[CLASS BaseShape] 생성자 호출 | ID: ${this.id}, Type: ${this.type}, Initial Width: ${this.strokeWidth}`);
     }
 
     createPoint(x, y) { return { x, y }; }
@@ -41,17 +45,30 @@ export class BaseShape {
         this.applyColors();
     }
 
-    applyColors() {
+    setOpacity(opacity) {
+        this.opacity = opacity;
         if (this.element) {
-            this.element.setAttribute('stroke', this.strokeColor === 'transparent' ? 'none' : this.strokeColor);
-            if (this.fillColor === 'transparent') {
-                this.element.setAttribute('fill', 'none');
-            } else {
-                const r = parseInt(this.fillColor.slice(1, 3), 16) || 0;
-                const g = parseInt(this.fillColor.slice(3, 5), 16) || 0;
-                const b = parseInt(this.fillColor.slice(5, 7), 16) || 0;
-                this.element.setAttribute('fill', `rgba(${r}, ${g}, ${b}, 0.2)`);
-            }
+            this.element.setAttribute('opacity', this.opacity);
+        }
+        if (this.type === 'group' && this.children) {
+            this.children.forEach(child => child.setOpacity(opacity));
+        }
+    }
+
+    getOpacity() { return this.opacity; }
+
+    applyColors() {
+        if (this.element && this.type !== 'image') {
+            const finalStroke = this.strokeColor === 'transparent' ? 'none' : this.strokeColor;
+            const finalFill = this.fillColor === 'transparent' ? 'none' : this.fillColor;
+            
+            this.element.setAttribute('stroke', finalStroke);
+            this.element.setAttribute('fill', finalFill);
+            
+            // [핵심 수정] 생성/변경 시 SVG 태그에 실제 선 굵기 값을 강제로 주입합니다.
+            this.element.setAttribute('stroke-width', this.strokeWidth);
+            
+            console.log(`[CLASS BaseShape] 🎨 색상/굵기 렌더링 완료 | ID: ${this.id}, Width: ${this.strokeWidth}`);
         }
     }
 
@@ -64,15 +81,11 @@ export class BaseShape {
         }
     }
 
-    // 그룹 내 자식 요소들의 수학적 병합 처리를 위한 정적 메서드
     static getFlattenedShapes(shapes) {
         let flattened = [];
         shapes.forEach(shape => {
-            if (shape.type === 'group') {
-                flattened = flattened.concat(this.getFlattenedShapes(shape.children));
-            } else {
-                flattened.push(shape);
-            }
+            if (shape.type === 'group') flattened = flattened.concat(this.getFlattenedShapes(shape.children));
+            else flattened.push(shape);
         });
         return flattened;
     }
@@ -104,42 +117,26 @@ export class BaseShape {
     static rotateGroup(shapes, deltaAngle, rotationCenter) {
         const flatShapes = this.getFlattenedShapes(shapes);
         const deltaRad = deltaAngle * (Math.PI / 180);
-        const cosA = Math.cos(deltaRad);
-        const sinA = Math.sin(deltaRad);
+        const cosA = Math.cos(deltaRad); const sinA = Math.sin(deltaRad);
 
         flatShapes.forEach(shape => {
             shape.points.forEach((p, i) => {
-                p.x = shape._tempStartPoints[i].x;
-                p.y = shape._tempStartPoints[i].y;
+                p.x = shape._tempStartPoints[i].x; p.y = shape._tempStartPoints[i].y;
             });
             shape.updateAttributes();
             shape.setRotation(shape._tempStartAngle, shape._tempStartCx, shape._tempStartCy);
-
-            const dx = shape._tempStartCx - rotationCenter.x;
-            const dy = shape._tempStartCy - rotationCenter.y;
-            
-            const newCx = rotationCenter.x + dx * cosA - dy * sinA;
-            const newCy = rotationCenter.y + dx * sinA + dy * cosA;
-
-            const moveX = newCx - shape._tempStartCx;
-            const moveY = newCy - shape._tempStartCy;
-
+            const dx = shape._tempStartCx - rotationCenter.x; const dy = shape._tempStartCy - rotationCenter.y;
+            const newCx = rotationCenter.x + dx * cosA - dy * sinA; const newCy = rotationCenter.y + dx * sinA + dy * cosA;
+            const moveX = newCx - shape._tempStartCx; const moveY = newCy - shape._tempStartCy;
             shape.move(moveX, moveY);
-            const newRotation = shape._tempStartAngle + deltaAngle;
-            shape.setRotation(newRotation, newCx, newCy);
+            shape.setRotation(shape._tempStartAngle + deltaAngle, newCx, newCy);
         });
-        
-        shapes.forEach(s => {
-            if(s.type === 'group') s.updateAttributes();
-        });
+        shapes.forEach(s => { if(s.type === 'group') s.updateAttributes(); });
     }
 
     static moveGroup(shapes, dx, dy) {
         const flatShapes = this.getFlattenedShapes(shapes);
         flatShapes.forEach(shape => shape.move(dx, dy));
-        
-        shapes.forEach(s => {
-            if(s.type === 'group') s.updateAttributes();
-        });
+        shapes.forEach(s => { if(s.type === 'group') s.updateAttributes(); });
     }
 }

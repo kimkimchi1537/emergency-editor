@@ -2,16 +2,23 @@ import { BaseTool } from './BaseTool.js';
 import { ShapeFactory } from '../factory/ShapeFactory.js';
 import { HistoryManager } from '../managers/HistoryManager.js';
 
-export class RectTool extends BaseTool {
+export class ImageTool extends BaseTool {
     constructor(state, workspace, shapeIdCounterRef) {
         super(state, workspace);
         this.shapeIdCounterRef = shapeIdCounterRef;
-        this.shapeType = 'rect';
+        this.shapeType = 'image';
+        console.log(`[CLASS ImageTool] 이미지 삽입 도구 초기화 완료`);
     }
 
     onMouseDown(e) {
         if (e.button === 2) {
             this.cancelDrawing();
+            return;
+        }
+
+        // 대기 중인 이미지가 없으면 그리지 않음
+        if (!this.state.pendingImageUrl) {
+            console.log(`[IMAGE-TOOL] 대기 중인 이미지가 없어 드로잉을 무시합니다.`);
             return;
         }
 
@@ -25,6 +32,7 @@ export class RectTool extends BaseTool {
             
             this.shapeIdCounterRef.value++;
             
+            console.log(`[IMAGE-TOOL] 이미지 영역 드래그 시작 | ID: shape_${this.shapeIdCounterRef.value}`);
             const shape = ShapeFactory.createShape(
                 this.shapeType,
                 `shape_${this.shapeIdCounterRef.value}`,
@@ -33,7 +41,10 @@ export class RectTool extends BaseTool {
                 this.state.currentStrokeWidth,
                 this.state.currentStrokeColor,
                 this.state.currentFillColor,
-                { opacity: this.state.currentOpacity } // 투명도 정보 전달
+                { 
+                    imageUrl: this.state.pendingImageUrl,
+                    opacity: this.state.currentOpacity 
+                }
             );
 
             if (shape) {
@@ -55,9 +66,16 @@ export class RectTool extends BaseTool {
         this.state.currentShape.update(pos.x, pos.y, e.shiftKey);
     }
 
-    onMouseUp(e) {}
+    onMouseUp(e) {
+        // 드래그 방식 적용
+        if (this.state.isDrawing && this.state.currentShape) {
+            this.completeDrawing();
+        }
+    }
 
     completeDrawing() {
+        console.log(`[IMAGE-TOOL] 이미지 배치 완료 (레이어 추가 호출)`);
+        
         HistoryManager.getInstance(this.state, this.workspace).saveState();
         this.state.shapes.push(this.state.currentShape);
         
@@ -69,7 +87,13 @@ export class RectTool extends BaseTool {
         this.state.currentShape = null;
         this.lastMousePos = null;
         
-        if (this.state.renderLayers) this.state.renderLayers(); // [추가] 레이어 렌더링 훅
+        // 이미지 배치가 끝나면 자동으로 선택(Select) 툴로 전환
+        if (this.state.setTool) {
+            this.state.setTool('select');
+        }
+
+        // 레이어 렌더링 훅
+        if (this.state.renderLayers) this.state.renderLayers();
     }
 
     cancelDrawing() {
@@ -84,18 +108,29 @@ export class RectTool extends BaseTool {
 
     handleKeyDown(e) {
         const key = e.key.toLowerCase();
-        if (key === 'escape') { this.cancelDrawing(); return true; }
-        if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, true); return true; }
+        if (key === 'escape') {
+            this.cancelDrawing();
+            return true;
+        }
+        if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) {
+            this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, true);
+            return true;
+        }
         return false;
     }
 
     handleKeyUp(e) {
-        if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) { this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false); return true; }
+        if (e.key === 'Shift' && this.state.isDrawing && this.state.currentShape && this.lastMousePos) {
+            this.state.currentShape.update(this.lastMousePos.x, this.lastMousePos.y, false);
+            return true;
+        }
         return false;
     }
 
     onDeactivate() {
-        if (this.state.isDrawing) this.cancelDrawing();
+        if (this.state.isDrawing) {
+            this.cancelDrawing();
+        }
         super.onDeactivate();
     }
 }

@@ -9,15 +9,15 @@ export class ColorManager {
         // 전역 색상 히스토리 공유 배열
         this.recentColors = [
             'rgba(230, 57, 70, 1)', 
-            'rgba(29, 53, 87, 0.2)', 
+            'rgba(29, 53, 87, 1)', 
             'rgba(42, 157, 143, 1)',
             'rgba(244, 162, 97, 1)'
         ];
 
         // [버그 수정부] 객체를 먼저 빈 상태로 할당하여 undefined 참조 방지
         this.pickers = {};
-        this.initPicker('stroke', 'rgba(230, 57, 70, 1)');
-        this.initPicker('fill', 'rgba(29, 53, 87, 0.2)');
+        this.initPicker('stroke', 'rgb(0, 0, 0)');
+        this.initPicker('fill', 'rgb(255, 255, 255)');
 
         // 외부 영역 클릭 시 팝오버 닫기
         document.addEventListener('mousedown', (e) => {

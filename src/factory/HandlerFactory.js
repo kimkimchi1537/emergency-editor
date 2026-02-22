@@ -2,7 +2,8 @@ import { LineHandler } from '../handlers/LineHandler.js';
 import { RectHandler } from '../handlers/RectHandler.js';
 import { CircleHandler } from '../handlers/CircleHandler.js';
 import { MultiLineHandler } from '../handlers/MultiLineHandler.js';
-import { GroupHandler } from '../handlers/GroupHandler.js'; // [추가] 임시 그룹 핸들러
+import { GroupHandler } from '../handlers/GroupHandler.js';
+import { ImageHandler } from '../handlers/ImageHandler.js'; // [추가] 이미지 전용 핸들러 임포트
 
 export class HandlerFactory {
     static registry = {
@@ -10,7 +11,8 @@ export class HandlerFactory {
         rect: new RectHandler(),
         circle: new CircleHandler(),
         multiline: new MultiLineHandler(),
-        group: new GroupHandler() // 다중 선택 시 동작
+        group: new GroupHandler(),
+        image: new ImageHandler() // [수정] RectHandler에서 ImageHandler로 교체 완료
     };
 
     static getHandler(type) {
