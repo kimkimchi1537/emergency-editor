@@ -12,40 +12,106 @@ export class SelectTool extends BaseTool {
         this.marqueeElement = null; this.selectionOverlay = null; this.rotationCenter = { x: 0, y: 0 };
         this.initialAngle = 0; this.currentDeltaAngle = 0; this.visualBox = null; this.targetBox = null;
         this.isAnimRunning = false; this.lerpFactor = 0.18; this.animThreshold = 0.05;
-        console.log(`[CLASS SelectTool] 선택 도구 초기화 완료`);
     }
     
-    // [신규] 선 굵기 및 UI 동기화를 담당하는 통합 헬퍼 함수
     syncStateUI() {
-        console.log(`[SELECT-TOOL] UI 상태 동기화 시작 (선택된 도형 수: ${this.state.selectedShapes.length})`);
         if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
         
         if (this.state.selectedShapes.length === 1) {
+            const shape = this.state.selectedShapes[0];
             const strokeInput = document.getElementById('stroke-width-input');
-            if (strokeInput && this.state.selectedShapes[0].strokeWidth !== undefined) {
-                strokeInput.value = this.state.selectedShapes[0].strokeWidth;
-                this.state.currentStrokeWidth = this.state.selectedShapes[0].strokeWidth;
-                console.log(`[SELECT-TOOL] 📏 선 굵기 UI 동기화 완료: ${this.state.currentStrokeWidth}`);
+            if (strokeInput && shape.strokeWidth !== undefined) {
+                strokeInput.value = shape.strokeWidth;
+                this.state.currentStrokeWidth = shape.strokeWidth;
             }
         }
         
+        const textOnlyOptions = document.getElementById('text-only-options');
+        const hasText = this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'text';
+        const isTextTool = this.state.currentTool === 'text';
+        
+        if (textOnlyOptions) {
+            if (hasText || isTextTool) {
+                textOnlyOptions.style.display = 'flex';
+            } else {
+                textOnlyOptions.style.display = 'none';
+            }
+        }
+
+        if (hasText) {
+            const shape = this.state.selectedShapes[0];
+            const contentInput = document.getElementById('text-content-input');
+            if (contentInput) contentInput.value = shape.textProps.content;
+            
+            const sizeInput = document.getElementById('text-size-input');
+            if (sizeInput) sizeInput.value = shape.textProps.fontSize;
+            
+            const btnBold = document.getElementById('btn-text-bold');
+            if (btnBold) btnBold.classList.toggle('active', shape.textProps.fontWeight === 'bold');
+            
+            const btnItalic = document.getElementById('btn-text-italic');
+            if (btnItalic) btnItalic.classList.toggle('active', shape.textProps.fontStyle === 'italic');
+            
+            const btnUnderline = document.getElementById('btn-text-underline');
+            if (btnUnderline) btnUnderline.classList.toggle('active', shape.textProps.textDecoration === 'underline');
+            
+            ['left', 'center', 'right'].forEach(align => {
+                const btn = document.getElementById(`btn-align-${align}`);
+                if (btn) btn.classList.toggle('active', shape.textProps.textAlign === align);
+            });
+            
+            ['top', 'middle', 'bottom'].forEach(valign => {
+                const btn = document.getElementById(`btn-valign-${valign}`);
+                if (btn) btn.classList.toggle('active', shape.textProps.verticalAlign === valign);
+            });
+        }
+
+        const infoLabel = document.getElementById('shape-info-label');
+        const inputX = document.getElementById('shape-pos-x');
+        const inputY = document.getElementById('shape-pos-y');
+        
+        if (infoLabel && inputX && inputY) {
+            if (this.state.selectedShapes.length === 1) {
+                const shape = this.state.selectedShapes[0];
+                const nameMap = { 'rect': '사각형', 'circle': '원형', 'line': '직선', 'multiline': '다중선', 'image': '이미지', 'group': '그룹', 'text': '텍스트' };
+                infoLabel.textContent = nameMap[shape.type] || shape.type;
+                
+                let minX = Infinity, minY = Infinity;
+                shape.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); });
+                
+                if(minX === Infinity) minX = 0;
+                if(minY === Infinity) minY = 0;
+
+                inputX.value = Math.round(minX);
+                inputY.value = Math.round(minY);
+                inputX.disabled = false;
+                inputY.disabled = false;
+            } else if (this.state.selectedShapes.length > 1) {
+                infoLabel.textContent = `다중선택(${this.state.selectedShapes.length})`;
+                inputX.value = ''; inputY.value = '';
+                inputX.disabled = true; inputY.disabled = true;
+            } else {
+                infoLabel.textContent = '선택 없음';
+                inputX.value = ''; inputY.value = '';
+                inputX.disabled = true; inputY.disabled = true;
+            }
+        }
+
         if (this.state.renderLayers) this.state.renderLayers();
-        console.log(`[SELECT-TOOL] UI 상태 동기화 완료`);
     }
 
     onActivate() {
-        console.log(`[SELECT-TOOL] 도구 활성화됨 (onActivate)`);
         if (this.state.selectionQueue && this.state.selectionQueue.length > 0) {
-            console.log(`[SELECT-TOOL] 선택 대기열(selectionQueue) 발견. 대상 수: ${this.state.selectionQueue.length}`);
             this.clearSelection(); 
             while (this.state.selectionQueue.length > 0) {
                 const targetShape = this.state.selectionQueue.shift(); 
                 if (this.state.shapes.includes(targetShape)) {
                     this.state.selectedShapes.push(targetShape); 
-                    console.log(`[SELECT-TOOL] 대기열에서 도형 자동 선택됨: ${targetShape.id}`);
                 }
             }
-            this.syncStateUI(); // [수정] 통합 UI 동기화 호출
+            this.syncStateUI();
+        } else {
+            this.syncStateUI();
         }
         if (this.state.selectedShapes.length > 0) this.renderSelectionUI();
     }
@@ -61,21 +127,17 @@ export class SelectTool extends BaseTool {
     onMouseDown(e) {
         if (e.button === 2) return;
         const pos = this.getMousePosition(e); const isShift = e.shiftKey; this.lastMousePos = pos;
-        console.log(`[SELECT-TOOL] onMouseDown 발생 | 위치: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}), Shift: ${isShift}`);
 
         if (this.state.selectedShapes.length === 1 && e.target.classList.contains('resize-handle')) {
-            console.log(`[SELECT-TOOL] 리사이즈 핸들 클릭 감지됨 (index: ${e.target.getAttribute('data-index')})`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isResizing = true; this.resizeHandleIndex = parseInt(e.target.getAttribute('data-index'), 10);
             this.renderSelectionUI(); return;
         }
         if (this.state.selectedShapes.length > 0 && e.target.classList.contains('rotate-handle')) {
-            console.log(`[SELECT-TOOL] 회전 핸들 클릭 감지됨`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isRotating = true; this.prepareRotation(pos); this.renderSelectionUI(); return;
         }
         if (this.state.selectedShapes.length > 0 && this.isPointInSelectionBox(pos)) {
-            console.log(`[SELECT-TOOL] 선택 영역 내부 클릭 감지 - 이동(Move) 준비`);
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.isMoving = true;
             this.moveStart = pos;
@@ -85,40 +147,30 @@ export class SelectTool extends BaseTool {
 
         let clickedShape = null;
         for (let i = this.state.shapes.length - 1; i >= 0; i--) {
-            if (this.state.shapes[i].isLocked) continue; // [신규] 잠긴 도형은 캔버스에서 클릭 감지 제외
+            if (this.state.shapes[i].isLocked) continue;
             const localPos = this.getInverseTransformedPoint(pos, this.state.shapes[i]);
             if (this.state.shapes[i].containsPoint(localPos.x, localPos.y)) {
                 clickedShape = this.state.shapes[i];
-                console.log(`[SELECT-TOOL] 도형 피킹 성공 | ID: ${clickedShape.id}`);
                 break;
             }
         }
 
         if (clickedShape) {
             if (this.state.selectedShapes.includes(clickedShape) && !isShift) {
-                console.log(`[SELECT-TOOL] 이미 선택된 도형 클릭 - 이동 준비`);
                 HistoryManager.getInstance(this.state, this.workspace).saveState();
                 this.isMoving = true; this.moveStart = pos; this.renderSelectionUI(); return;
             }
             if (isShift) {
                 const index = this.state.selectedShapes.indexOf(clickedShape);
-                if (index > -1) { 
-                    console.log(`[SELECT-TOOL] Shift+클릭: 다중 선택 해제됨 | ID: ${clickedShape.id}`);
-                    this.state.selectedShapes.splice(index, 1); 
-                } else { 
-                    console.log(`[SELECT-TOOL] Shift+클릭: 다중 선택 추가됨 | ID: ${clickedShape.id}`);
-                    this.state.selectedShapes.push(clickedShape); 
-                }
+                if (index > -1) this.state.selectedShapes.splice(index, 1); 
+                else this.state.selectedShapes.push(clickedShape); 
             } else {
-                console.log(`[SELECT-TOOL] 단일 선택 처리됨 | ID: ${clickedShape.id}`);
                 this.clearSelection(); 
                 this.state.selectedShapes.push(clickedShape); 
             }
             this.currentDeltaAngle = 0; this.renderSelectionUI();
-            
-            this.syncStateUI(); // [수정] 통합 UI 동기화 호출
+            this.syncStateUI();
         } else { 
-            console.log(`[SELECT-TOOL] 빈 공간 클릭 감지 - Marquee(드래그 선택) 시작 준비`);
             if (!isShift) this.clearSelection(); 
             this.startMarquee(pos); 
         }
@@ -135,46 +187,69 @@ export class SelectTool extends BaseTool {
             return;
         }
 
+        // 선택된 도형 위 호버 처리 (모든 도형을 move 커서로 통일)
         if (this.state.selectedShapes.length > 0) {
-            if (e.target.classList.contains('rotate-handle')) {
-                this.workspace.style.cursor = 'grab';
-                return;
-            }
-            if (e.target.classList.contains('resize-handle')) {
-                this.workspace.style.cursor = 'crosshair';
-                return;
-            }
-            if (this.isPointInSelectionBox(pos)) {
-                this.workspace.style.cursor = 'move';
-                return;
+            if (e.target.classList.contains('rotate-handle')) { this.workspace.style.cursor = 'grab'; return; }
+            if (e.target.classList.contains('resize-handle')) { this.workspace.style.cursor = 'crosshair'; return; }
+            
+            if (this.isPointInSelectionBox(pos)) { 
+                this.workspace.style.cursor = 'move'; 
+                return; 
             }
         }
 
+        // 선택되지 않은 도형 위 호버 처리 (모든 도형을 pointer 커서로 통일)
         let hoverFound = false;
+        
         for (let i = this.state.shapes.length - 1; i >= 0; i--) {
-            if (this.state.shapes[i].isLocked) continue; // [신규] 잠긴 도형은 마우스 오버(Hover) 감지에서도 제외
+            if (this.state.shapes[i].isLocked) continue;
             const localPos = this.getInverseTransformedPoint(pos, this.state.shapes[i]);
-            if (this.state.shapes[i].containsPoint(localPos.x, localPos.y)) {
-                hoverFound = true;
-                break;
+            if (this.state.shapes[i].containsPoint(localPos.x, localPos.y)) { 
+                hoverFound = true; 
+                break; 
             }
         }
+        
         this.workspace.style.cursor = hoverFound ? 'pointer' : 'default';
     }
 
     onMouseUp(e) {
         if (e.button === 2) return;
-        console.log(`[SELECT-TOOL] onMouseUp 발생`);
         let actionCompleted = false;
-        if (this.isResizing) { console.log(`[SELECT-TOOL] 리사이즈 완료`); this.isResizing = false; this.resizeHandleIndex = -1; actionCompleted = true; }
-        if (this.isRotating) { console.log(`[SELECT-TOOL] 회전 완료`); this.isRotating = false; actionCompleted = true; }
-        if (this.isMoving) { console.log(`[SELECT-TOOL] 이동 완료`); this.isMoving = false; actionCompleted = true; }
-        if (this.isMarquee) { console.log(`[SELECT-TOOL] Marquee 드래그 완료 처리 진입`); this.endMarquee(); this.currentDeltaAngle = 0; actionCompleted = true; }
-        if (actionCompleted) this.renderSelectionUI();
+        if (this.isResizing) { this.isResizing = false; this.resizeHandleIndex = -1; actionCompleted = true; }
+        if (this.isRotating) { this.isRotating = false; actionCompleted = true; }
+        if (this.isMoving) { this.isMoving = false; actionCompleted = true; }
+        if (this.isMarquee) { this.endMarquee(); this.currentDeltaAngle = 0; actionCompleted = true; }
+        
+        // 이동이나 리사이즈 등 액션이 완료되었을 때 즉시 커서를 재계산
+        if (actionCompleted) {
+            this.renderSelectionUI();
+            this.syncStateUI();
+            // onMouseMove를 강제로 한번 호출하여 현재 마우스 위치에 맞는 커서로 업데이트
+            this.onMouseMove(e);
+        }
     }
     
+    // 더블 클릭 시 캔버스 내 텍스트 편집기 실행
+    onDoubleClick(e) {
+        const pos = this.getMousePosition(e);
+        if (this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type === 'text') {
+            const shape = this.state.selectedShapes[0];
+            const localPos = this.getInverseTransformedPoint(pos, shape);
+            if (shape.containsPoint(localPos.x, localPos.y)) {
+                if (typeof shape.enableEditing === 'function') {
+                    shape.enableEditing(() => {
+                        this.syncStateUI();
+                        import('../managers/HistoryManager.js').then(({HistoryManager}) => {
+                            HistoryManager.getInstance(this.state, this.workspace).saveState();
+                        });
+                    });
+                }
+            }
+        }
+    }
+
     onContextMenu(e) {
-        console.log(`[SELECT-TOOL] 컨텍스트 메뉴(우클릭) 이벤트 감지`);
         const cm = document.getElementById('context-menu'); const btnGroup = document.getElementById('menu-group'); const btnUngroup = document.getElementById('menu-ungroup');
         if (!cm || !btnGroup || !btnUngroup) return;
         cm.style.display = 'none'; btnGroup.style.display = 'none'; btnUngroup.style.display = 'none';
@@ -188,7 +263,6 @@ export class SelectTool extends BaseTool {
     
     groupSelected() {
         if (this.state.selectedShapes.length < 2) return;
-        console.log(`[SELECT-TOOL] 그룹화 실행 (대상 도형 수: ${this.state.selectedShapes.length})`);
         HistoryManager.getInstance(this.state, this.workspace).saveState();
         const children = [...this.state.selectedShapes];
         const groupShape = ShapeFactory.createGroup('group_' + Date.now(), children);
@@ -201,7 +275,6 @@ export class SelectTool extends BaseTool {
 
     ungroupSelected() {
         if (this.state.selectedShapes.length !== 1 || this.state.selectedShapes[0].type !== 'group') return;
-        console.log(`[SELECT-TOOL] 그룹 해제 실행 (대상 그룹 ID: ${this.state.selectedShapes[0].id})`);
         HistoryManager.getInstance(this.state, this.workspace).saveState();
         const groupShape = this.state.selectedShapes[0];
         const children = [...groupShape.children];
@@ -266,7 +339,6 @@ export class SelectTool extends BaseTool {
     }
     
     prepareRotation(pos) {
-        console.log(`[SELECT-TOOL] 회전 처리 준비 시작`);
         this.initialBoundingBox = this.getSelectionBoundingBox();
         BaseShape.prepareGroupSnapshot(this.state.selectedShapes);
         if (this.state.selectedShapes.length === 1 && this.state.selectedShapes[0].type !== 'group') {
@@ -275,7 +347,6 @@ export class SelectTool extends BaseTool {
             this.rotationCenter = { x: this.initialBoundingBox.minX + this.initialBoundingBox.width / 2, y: this.initialBoundingBox.minY + this.initialBoundingBox.height / 2 };
         }
         this.initialAngle = Math.atan2(pos.y - this.rotationCenter.y, pos.x - this.rotationCenter.x) * (180 / Math.PI);
-        console.log(`[SELECT-TOOL] 회전 중심점 설정 완료 | cx: ${this.rotationCenter.x.toFixed(1)}, cy: ${this.rotationCenter.y.toFixed(1)}`);
     }
     
     applyRotation(pos, isShift) {
@@ -323,7 +394,6 @@ export class SelectTool extends BaseTool {
     }
     
     startMarquee(pos) {
-        console.log(`[SELECT-TOOL] Marquee (드래그 박스) 생성 시작 | 원점: (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)})`);
         this.isMarquee = true; this.marqueeStart = { x: pos.x, y: pos.y };
         this.marqueeElement = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         this.marqueeElement.setAttribute('fill', 'rgba(0, 102, 204, 0.1)'); this.marqueeElement.setAttribute('stroke', '#0066cc');
@@ -336,13 +406,8 @@ export class SelectTool extends BaseTool {
         this.marqueeElement.setAttribute('width', Math.abs(this.marqueeStart.x - pos.x)); this.marqueeElement.setAttribute('height', Math.abs(this.marqueeStart.y - pos.y));
     }
 
-    // [핵심 추가] 에러의 원인이었던 다중 선택 충돌 판정 메서드를 완벽하게 구현했습니다.
     isShapeInBox(shape, box) {
-        console.log(`[SELECT-TOOL] 🔍 Marquee 교차 판별 시작 | 대상 도형 ID: ${shape.id}, 타입: ${shape.type}`);
-        
         let shapeMinX = Infinity, shapeMinY = Infinity, shapeMaxX = -Infinity, shapeMaxY = -Infinity;
-        
-        // 그룹일 경우를 대비하여 모든 하위 도형들을 평탄화(Flatten)하여 점들을 추출합니다.
         const flatShapes = BaseShape.getFlattenedShapes([shape]);
         
         flatShapes.forEach(s => {
@@ -353,12 +418,10 @@ export class SelectTool extends BaseTool {
                 angleRad = parseFloat(match[1]) * (Math.PI / 180); 
                 cx = parseFloat(match[2]); 
                 cy = parseFloat(match[3]); 
-                console.log(`[SELECT-TOOL] 🔄 회전 속성 감지 적용 | ID: ${s.id}, ${match[1]}도, 중심점:(${cx.toFixed(1)}, ${cy.toFixed(1)})`);
             }
             
             s.points.forEach(p => {
                 let tx = p.x, ty = p.y;
-                // 회전이 적용된 도형이면 점 좌표를 물리적으로 회전시켜줍니다.
                 if (match) {
                     const dx = p.x - cx; 
                     const dy = p.y - cy;
@@ -370,20 +433,11 @@ export class SelectTool extends BaseTool {
             });
         });
 
-        console.log(`[SELECT-TOOL] 📐 도형 실제 AABB | min(${shapeMinX.toFixed(1)}, ${shapeMinY.toFixed(1)}) ~ max(${shapeMaxX.toFixed(1)}, ${shapeMaxY.toFixed(1)})`);
-        
-        // 두 AABB가 교차(Intersect)하는지 판별합니다. (완전히 안 떨어져 있으면 교차한 것으로 판단)
-        const isIntersecting = !(shapeMaxX < box.minX || shapeMinX > box.maxX || shapeMaxY < box.minY || shapeMinY > box.maxY);
-        
-        console.log(`[SELECT-TOOL] ✨ 판별 결과 | 교차 여부: ${isIntersecting ? '포함(O)' : '제외(X)'}`);
-        return isIntersecting;
+        return !(shapeMaxX < box.minX || shapeMinX > box.maxX || shapeMaxY < box.minY || shapeMinY > box.maxY);
     }
     
     endMarquee() {
-        if (!this.marqueeElement) {
-            console.log(`[SELECT-TOOL] Marquee 엘리먼트가 존재하지 않아 종료를 중단합니다.`);
-            return;
-        }
+        if (!this.marqueeElement) return;
 
         const widthAttr = this.marqueeElement.getAttribute('width');
         const heightAttr = this.marqueeElement.getAttribute('height');
@@ -392,46 +446,34 @@ export class SelectTool extends BaseTool {
             this.workspace.removeChild(this.marqueeElement);
             this.marqueeElement = null;
             this.isMarquee = false;
-            console.log(`[SELECT-TOOL] 🛑 드래그 영역 크기가 0이므로 단순 클릭으로 간주 - Marquee 조기 종료`);
             return;
         }
 
         const x = parseFloat(this.marqueeElement.getAttribute('x'));
         const y = parseFloat(this.marqueeElement.getAttribute('y'));
-        const width = parseFloat(widthAttr);
-        const height = parseFloat(heightAttr);
-        const marqueeBox = { minX: x, minY: y, maxX: x + width, maxY: y + height };
+        const marqueeBox = { minX: x, minY: y, maxX: x + parseFloat(widthAttr), maxY: y + parseFloat(heightAttr) };
 
-        console.log(`[SELECT-TOOL] 🟦 Marquee 드래그 영역 판별 실행 | 박스 정보: x=${x.toFixed(1)}, y=${y.toFixed(1)}, w=${width.toFixed(1)}, h=${height.toFixed(1)}`);
-
-        // 생성된 isShapeInBox 함수를 호출하여 도형 포함 여부를 검사합니다.
         this.state.shapes.forEach(shape => {
-            if (shape.isLocked) {
-                console.log(`[SELECT-TOOL] 🔒 도형 잠김 상태 확인 - 선택 제외 | ID: ${shape.id}`);
-                return; 
-            }
-
+            if (shape.isLocked) return; 
             if (this.isShapeInBox(shape, marqueeBox)) {
                 if (!this.state.selectedShapes.includes(shape)) {
                     this.state.selectedShapes.push(shape);
-                    console.log(`[SELECT-TOOL] 🎯 도형이 선택 대기열에 추가되었습니다 | ID: ${shape.id}`);
                 }
             }
         });
         
-        this.syncStateUI(); // 통합 UI 동기화
+        this.syncStateUI();
         this.workspace.removeChild(this.marqueeElement); 
         this.marqueeElement = null; 
         this.isMarquee = false;
-        
-        console.log(`[SELECT-TOOL] 🏁 Marquee 선택 처리 완료 | 최종 선택된 도형 수: ${this.state.selectedShapes.length}`);
     }
     
     handleKeyDown(e) {
         const key = e.key.toLowerCase();
+        if (document.activeElement.tagName === 'INPUT' || document.activeElement.isContentEditable) return false;
+        
         if (key === 'delete' || key === 'backspace') {
             if (this.state.selectedShapes.length > 0) { 
-                console.log(`[SELECT-TOOL] 삭제 키 감지됨 - 선택된 도형 삭제 처리`);
                 HistoryManager.getInstance(this.state, this.workspace).saveState(); 
                 this.deleteSelectedShapes(); 
                 this.renderSelectionUI(); 
@@ -454,11 +496,10 @@ export class SelectTool extends BaseTool {
     }
     
     clearSelection() {
-        console.log(`[SELECT-TOOL] 전체 선택 해제 (clearSelection)`);
         this.state.selectedShapes = []; 
         this.currentDeltaAngle = 0; 
         this.clearSelectionOverlay();
-        this.syncStateUI(); // 통합 UI 동기화
+        this.syncStateUI();
     }
     
     deleteSelectedShapes() {
@@ -467,11 +508,10 @@ export class SelectTool extends BaseTool {
             const idx = this.state.shapes.indexOf(shape); if (idx > -1) this.state.shapes.splice(idx, 1);
         });
         this.state.selectedShapes = [];
-        this.syncStateUI(); // 통합 UI 동기화
+        this.syncStateUI();
     }
     
     onDeactivate() { 
-        console.log(`[SELECT-TOOL] 도구 비활성화됨 (onDeactivate)`);
         this.clearSelection(); 
         const cm = document.getElementById('context-menu'); 
         if (cm) cm.style.display = 'none'; 

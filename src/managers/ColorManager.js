@@ -6,7 +6,6 @@ export class ColorManager {
         this.workspace = workspace;
         this.isUpdatingUI = false;
         
-        // 전역 색상 히스토리 공유 배열
         this.recentColors = [
             'rgba(230, 57, 70, 1)', 
             'rgba(29, 53, 87, 1)', 
@@ -14,12 +13,12 @@ export class ColorManager {
             'rgba(244, 162, 97, 1)'
         ];
 
-        // [버그 수정부] 객체를 먼저 빈 상태로 할당하여 undefined 참조 방지
         this.pickers = {};
         this.initPicker('stroke', 'rgb(0, 0, 0)');
         this.initPicker('fill', 'rgb(255, 255, 255)');
+        // [수정] 텍스트 컬러 피커의 기본 색상을 검은색으로 초기화
+        this.initPicker('text', 'rgb(0, 0, 0)');
 
-        // 외부 영역 클릭 시 팝오버 닫기
         document.addEventListener('mousedown', (e) => {
             if (!e.target.closest('.color-picker-container')) {
                 document.querySelectorAll('.color-popover').forEach(p => p.classList.remove('active'));
@@ -70,6 +69,8 @@ export class ColorManager {
 
     initPicker(type, defaultColor) {
         const btn = document.getElementById(`${type}-color-btn`);
+        if (!btn) return null; // 버튼이 없을 수 있으므로 방어 코드 추가
+        
         const preview = document.getElementById(`${type}-color-preview`);
         const mixedIcon = document.getElementById(`${type}-mixed-icon`);
         const popover = document.getElementById(`${type}-popover`);
@@ -82,10 +83,8 @@ export class ColorManager {
 
         const ui = { btn, preview, mixedIcon, popover, nativePicker, alphaSlider, alphaVal, textInput, transparentChk, recentContainer };
 
-        // [버그 수정부] syncLocalUI가 호출되기 전에 pickers 딕셔너리에 자신의 UI 객체를 미리 할당합니다.
         this.pickers[type] = ui;
 
-        // 팝오버 토글
         btn.addEventListener('click', () => {
             const isActive = popover.classList.contains('active');
             document.querySelectorAll('.color-popover').forEach(p => p.classList.remove('active'));
@@ -95,7 +94,6 @@ export class ColorManager {
             }
         });
 
-        // UI 조작 핸들러
         const handleUIChange = (saveHistory = false) => {
             if (this.isUpdatingUI) return;
             
@@ -139,15 +137,16 @@ export class ColorManager {
         transparentChk.addEventListener('change', () => handleUIChange(true));
         textInput.addEventListener('change', handleTextChange);
 
-        // 초기 상태 설정
         if (type === 'stroke') this.state.currentStrokeColor = defaultColor;
         if (type === 'fill') this.state.currentFillColor = defaultColor;
+        if (type === 'text') this.state.currentTextColor = defaultColor;
         this.syncLocalUI(type, defaultColor);
 
         return ui;
     }
 
     syncLocalUI(type, colorStr) {
+        if (!this.pickers[type]) return;
         this.isUpdatingUI = true;
         const ui = this.pickers[type];
         const parsed = this.parseColor(colorStr);
@@ -175,11 +174,11 @@ export class ColorManager {
         if (this.recentColors.length > 12) {
             this.recentColors.pop();
         }
-        this.renderRecentColors('stroke');
-        this.renderRecentColors('fill');
+        Object.keys(this.pickers).forEach(type => this.renderRecentColors(type));
     }
 
     renderRecentColors(type) {
+        if (!this.pickers[type]) return;
         const container = this.pickers[type].recentContainer;
         container.innerHTML = '';
         this.recentColors.forEach(color => {
@@ -198,7 +197,6 @@ export class ColorManager {
                 this.applyColorToShapes(type, color);
                 this.pickers[type].popover.classList.remove('active');
                 
-                // 히스토리 클릭 시 순서를 맨 앞으로 갱신
                 this.addToHistory(color);
             });
             container.appendChild(swatch);
@@ -208,13 +206,21 @@ export class ColorManager {
     applyColorToShapes(type, colorStr) {
         if (type === 'stroke') this.state.currentStrokeColor = colorStr;
         if (type === 'fill') this.state.currentFillColor = colorStr;
+        if (type === 'text') this.state.currentTextColor = colorStr;
 
         if (this.state.selectedShapes && this.state.selectedShapes.length > 0) {
             HistoryManager.getInstance(this.state, this.workspace).saveState();
             this.state.selectedShapes.forEach(shape => {
-                shape.setColors(this.state.currentStrokeColor, this.state.currentFillColor);
+                // [분기] 텍스트 색상 피커는 텍스트 객체의 폰트 색상만 변경
+                if (type === 'text' && shape.type === 'text') {
+                    shape.textProps.fontColor = colorStr;
+                    shape.applyTextProps();
+                } else if (type !== 'text') {
+                    if (type === 'stroke') shape.strokeColor = colorStr;
+                    if (type === 'fill') shape.fillColor = colorStr;
+                    shape.applyColors();
+                }
             });
-            console.log(`[COLOR-MANAGER] 선택된 ${this.state.selectedShapes.length}개 도형에 색상 일괄 적용 완료 | ${type} -> ${colorStr}`);
         }
     }
 
@@ -222,37 +228,48 @@ export class ColorManager {
         this.isUpdatingUI = true;
 
         if (!selectedShapes || selectedShapes.length === 0) {
-            this.pickers.stroke.mixedIcon.style.display = 'none';
-            this.pickers.fill.mixedIcon.style.display = 'none';
+            if(this.pickers.stroke) this.pickers.stroke.mixedIcon.style.display = 'none';
+            if(this.pickers.fill) this.pickers.fill.mixedIcon.style.display = 'none';
+            if(this.pickers.text) this.pickers.text.mixedIcon.style.display = 'none';
             this.isUpdatingUI = false;
             return;
         }
 
         const strokeSet = new Set();
         const fillSet = new Set();
+        const textSet = new Set();
 
         selectedShapes.forEach(shape => {
             const colors = shape.getColors();
             strokeSet.add(colors.stroke);
             fillSet.add(colors.fill);
+            if (shape.type === 'text' && shape.textProps) {
+                textSet.add(shape.textProps.fontColor);
+            }
         });
 
-        // 선 색상 다중 체크
         if (strokeSet.size > 1) {
             this.pickers.stroke.mixedIcon.style.display = 'flex';
             this.pickers.stroke.preview.style.background = 'transparent';
         } else {
-            const strokeVal = [...strokeSet][0];
-            this.syncLocalUI('stroke', strokeVal);
+            this.syncLocalUI('stroke', [...strokeSet][0]);
         }
 
-        // 채우기 색상 다중 체크
         if (fillSet.size > 1) {
             this.pickers.fill.mixedIcon.style.display = 'flex';
             this.pickers.fill.preview.style.background = 'transparent';
         } else {
-            const fillVal = [...fillSet][0];
-            this.syncLocalUI('fill', fillVal);
+            this.syncLocalUI('fill', [...fillSet][0]);
+        }
+
+        // [신규] 텍스트 색상 다중 체크 (텍스트 도형이 하나라도 있을 때)
+        if (textSet.size > 0 && this.pickers.text) {
+            if (textSet.size > 1) {
+                this.pickers.text.mixedIcon.style.display = 'flex';
+                this.pickers.text.preview.style.background = 'transparent';
+            } else {
+                this.syncLocalUI('text', [...textSet][0]);
+            }
         }
 
         this.isUpdatingUI = false;

@@ -27,9 +27,13 @@ export class HistoryManager {
             const clonedShape = Object.assign(Object.create(Object.getPrototypeOf(shape)), shape);
             clonedShape.points = shape.points.map(p => ({...p}));
             clonedShape.element = shape.element.cloneNode(true);
-            clonedShape.isLocked = shape.isLocked; // [신규] Undo/Redo 시 잠금 상태도 100% 복제
+            clonedShape.isLocked = shape.isLocked; 
             
-            // 그룹(GroupShape)인 경우 자식 객체까지 재귀적으로 깊은 복사(Deep Clone) 수행
+            // [신규] 텍스트 도형의 세부 속성 깊은 복사
+            if (shape.textProps) {
+                clonedShape.textProps = JSON.parse(JSON.stringify(shape.textProps));
+            }
+            
             if (shape.type === 'group' && shape.children) {
                 clonedShape.children = this.cloneShapes(shape.children);
                 clonedShape.element.innerHTML = ''; 
@@ -72,6 +76,11 @@ export class HistoryManager {
             this.state.colorManager.updateUI(this.state.selectedShapes);
         }
         
+        // 상태 복원 후 상단 옵션 패널 UI 강제 동기화 위임
+        if (this.state.activeTool && typeof this.state.activeTool.syncStateUI === 'function') {
+            this.state.activeTool.syncStateUI();
+        }
+
         if (this.state.renderLayers) {
             this.state.renderLayers();
         }

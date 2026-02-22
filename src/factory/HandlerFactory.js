@@ -3,7 +3,8 @@ import { RectHandler } from '../handlers/RectHandler.js';
 import { CircleHandler } from '../handlers/CircleHandler.js';
 import { MultiLineHandler } from '../handlers/MultiLineHandler.js';
 import { GroupHandler } from '../handlers/GroupHandler.js';
-import { ImageHandler } from '../handlers/ImageHandler.js'; // [추가] 이미지 전용 핸들러 임포트
+import { ImageHandler } from '../handlers/ImageHandler.js';
+import { TextHandler } from '../handlers/TextHandler.js'; // [추가]
 
 export class HandlerFactory {
     static registry = {
@@ -12,7 +13,8 @@ export class HandlerFactory {
         circle: new CircleHandler(),
         multiline: new MultiLineHandler(),
         group: new GroupHandler(),
-        image: new ImageHandler() // [수정] RectHandler에서 ImageHandler로 교체 완료
+        image: new ImageHandler(),
+        text: new TextHandler() // [추가]
     };
 
     static getHandler(type) {

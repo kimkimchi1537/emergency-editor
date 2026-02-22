@@ -8,10 +8,22 @@
     <style>
         body { margin: 0; display: flex; flex-direction: column; height: 100vh; background-color: #282828; color: #fff; font-family: sans-serif; overflow: hidden; }
         
+        #header-container { display: flex; flex-direction: column; flex-shrink: 0; }
         #header-options { height: 60px; background-color: #333; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #1e1e1e; gap: 20px; flex-shrink: 0; }
         .option-group { display: flex; align-items: center; gap: 8px; position: relative; }
         .option-label { font-size: 13px; color: #bbb; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
         .option-label .material-icons { font-size: 18px; }
+        
+        /* [신규] 텍스트 옵션 띠 (기본 숨김 해제, 항상 노출) */
+        #header-text-options { height: 46px; background-color: #2b2b2b; display: flex; align-items: center; padding: 0 15px; border-bottom: 1px solid #1e1e1e; gap: 15px; flex-shrink: 0; }
+        .text-style-btn { background: #444; border: 1px solid #555; color: #ddd; border-radius: 4px; padding: 4px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .text-style-btn:hover { background: #555; }
+        .text-style-btn.active { background: #0066cc; color: #fff; border-color: #005bb5; }
+        .text-style-btn .material-icons { font-size: 18px; }
+        .btn-group { display: flex; align-items: center; gap: -1px; }
+        .btn-group .text-style-btn { border-radius: 0; margin-left: -1px; }
+        .btn-group .text-style-btn:first-child { border-top-left-radius: 4px; border-bottom-left-radius: 4px; margin-left: 0; }
+        .btn-group .text-style-btn:last-child { border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
         
         input, select { background: #444; border: 1px solid #555; color: #fff; padding: 5px 8px; border-radius: 4px; outline: none; font-size: 13px; }
         .btn-export { background-color: #2a9d8f; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; gap: 5px; font-weight: bold; transition: background 0.2s; }
@@ -23,9 +35,10 @@
         
         #main-container { flex: 1; display: flex; overflow: hidden; }
         #sidebar { width: 70px; background-color: #333; display: flex; flex-direction: column; align-items: center; padding-top: 15px; border-right: 1px solid #1e1e1e; flex-shrink: 0; }
-        .tool-btn { width: 50px; height: 50px; margin-bottom: 12px; background-color: #444; border: none; color: #ddd; cursor: pointer; border-radius: 6px; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: background 0.2s; }
+        .tool-btn { width: 50px; height: 50px; margin-bottom: 12px; background-color: #444; border: none; color: #ddd; cursor: pointer; border-radius: 6px; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 11px; transition: background 0.2s; gap: 2px;}
         .tool-btn:hover { background-color: #555; }
         .tool-btn.active { background-color: #0066cc; color: #fff; }
+        .tool-btn .material-icons { font-size: 20px; }
         
         #workspace-container { flex: 1; display: flex; justify-content: center; align-items: center; background-color: #1a1a1a; overflow: auto; padding: 40px; }
         #workspace { background-color: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.6); flex-shrink: 0; }
@@ -76,91 +89,162 @@
     </style>
 </head>
 <body>
-    <div id="header-options">
-        <div class="option-group">
-            <label class="option-label"><span class="material-icons">line_weight</span>굵기</label>
-            <input type="number" id="stroke-width-input" min="1" max="20" value="4">
-        </div>
-        
-        <div class="option-group">
-            <label class="option-label"><span class="material-icons">palette</span>선</label>
-            <div class="color-picker-container" id="stroke-picker-container">
-                <div class="color-picker-btn" id="stroke-color-btn" title="선 색상 선택">
-                    <div class="color-preview" id="stroke-color-preview"></div>
-                    <span class="material-icons mixed-icon" id="stroke-mixed-icon" style="display:none;">question_mark</span>
+    <div id="header-container">
+        <div id="header-options">
+            <div class="option-group">
+                <label class="option-label"><span class="material-icons">line_weight</span>굵기</label>
+                <input type="number" id="stroke-width-input" min="1" max="20" value="4">
+            </div>
+            
+            <div class="option-group">
+                <label class="option-label"><span class="material-icons">palette</span>선</label>
+                <div class="color-picker-container" id="stroke-picker-container">
+                    <div class="color-picker-btn" id="stroke-color-btn" title="선 색상 선택">
+                        <div class="color-preview" id="stroke-color-preview"></div>
+                        <span class="material-icons mixed-icon" id="stroke-mixed-icon" style="display:none;">question_mark</span>
+                    </div>
+                    <div class="color-popover" id="stroke-popover">
+                        <div class="popover-row"><input type="color" id="stroke-native-picker"><input type="text" id="stroke-text-input" placeholder="rgba(r, g, b, a)"></div>
+                        <div class="popover-row"><span class="alpha-label">Alpha</span><input type="range" id="stroke-alpha-slider" min="0" max="1" step="0.01" value="1"><span class="alpha-val" id="stroke-alpha-val">100%</span></div>
+                        <label class="checkbox-label"><input type="checkbox" id="stroke-transparent-chk">완전 투명</label>
+                        <div class="recent-colors-title">최근 사용된 색상</div><div class="recent-colors" id="stroke-recent-colors"></div>
+                    </div>
                 </div>
-                <div class="color-popover" id="stroke-popover">
-                    <div class="popover-row"><input type="color" id="stroke-native-picker"><input type="text" id="stroke-text-input" placeholder="rgba(r, g, b, a)"></div>
-                    <div class="popover-row"><span class="alpha-label">Alpha</span><input type="range" id="stroke-alpha-slider" min="0" max="1" step="0.01" value="1"><span class="alpha-val" id="stroke-alpha-val">100%</span></div>
-                    <label class="checkbox-label"><input type="checkbox" id="stroke-transparent-chk">완전 투명</label>
-                    <div class="recent-colors-title">최근 사용된 색상</div><div class="recent-colors" id="stroke-recent-colors"></div>
+            </div>
+
+            <div class="option-group">
+                <label class="option-label"><span class="material-icons">format_paint</span>채우기/배경</label>
+                <div class="color-picker-container" id="fill-picker-container">
+                    <div class="color-picker-btn" id="fill-color-btn" title="채우기 색상 선택">
+                        <div class="color-preview" id="fill-color-preview"></div>
+                        <span class="material-icons mixed-icon" id="fill-mixed-icon" style="display:none;">question_mark</span>
+                    </div>
+                    <div class="color-popover" id="fill-popover">
+                        <div class="popover-row"><input type="color" id="fill-native-picker"><input type="text" id="fill-text-input" placeholder="rgba(r, g, b, a)"></div>
+                        <div class="popover-row"><span class="alpha-label">Alpha</span><input type="range" id="fill-alpha-slider" min="0" max="1" step="0.01" value="0.2"><span class="alpha-val" id="fill-alpha-val">20%</span></div>
+                        <label class="checkbox-label"><input type="checkbox" id="fill-transparent-chk">완전 투명</label>
+                        <div class="recent-colors-title">최근 사용된 색상</div><div class="recent-colors" id="fill-recent-colors"></div>
+                    </div>
                 </div>
+            </div>
+
+            <div class="option-group">
+                <label class="option-label"><span class="material-icons">opacity</span>투명도</label>
+                <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="1" style="width: 70px; cursor: pointer; accent-color: #0066cc;">
+                <span id="opacity-val" style="font-size: 12px; color: #ddd; width: 35px;">100%</span>
+            </div>
+
+            <div class="option-group">
+                <label class="option-label"><span class="material-icons">description</span>용지</label>
+                <select id="canvas-size-preset">
+                    <option value="fit">화면 맞춤</option>
+                    <optgroup label="A4"><option value="A4_P">A4 세로 (210x297mm)</option><option value="A4_L">A4 가로 (297x210mm)</option></optgroup>
+                    <optgroup label="A3"><option value="A3_P">A3 세로 (297x420mm)</option><option value="A3_L">A3 가로 (420x297mm)</option></optgroup>
+                    <optgroup label="B4"><option value="B4_P">B4 세로 (257x364mm)</option><option value="B4_L">B4 가로 (364x257mm)</option></optgroup>
+                    <option value="custom">직접 입력</option>
+                </select>
+            </div>
+            <div id="custom-size-controls" class="option-group custom-size-inputs">
+                <input type="number" id="custom-width" placeholder="너비(px)" value="800">
+                <span>x</span>
+                <input type="number" id="custom-height" placeholder="높이(px)" value="600">
+            </div>
+            
+            <div style="flex: 1;"></div>
+            
+            <!-- [신규] 스냅(자석) 기능 토글 -->
+            <div class="option-group" style="border-right: 1px solid #444; padding-right: 15px; margin-right: 15px;">
+                <label class="option-label" style="cursor:pointer;" title="가까운 꼭지점에 자동으로 달라붙습니다">
+                    <input type="checkbox" id="snap-toggle-chk" checked style="margin-right:6px; cursor:pointer; accent-color:#0066cc;">
+                    <span class="material-icons" style="font-size:16px;">api</span>스냅(자석)
+                </label>
+            </div>
+            
+            <div class="option-group">
+                <button class="btn-upload" id="btn-upload-image" title="로컬 이미지 불러오기 (클립보드 Ctrl+V 지원)">
+                    <span class="material-icons">image_search</span>이미지 삽입
+                </button>
+                <input type="file" id="image-upload-input" accept="image/*" style="display:none;">
+            </div>
+
+            <div class="option-group">
+                <button class="btn-export" id="btn-export-svg"><span class="material-icons">file_download</span>SVG</button>
+                <button class="btn-export png" id="btn-export-png"><span class="material-icons">image</span>PNG</button>
             </div>
         </div>
 
-        <div class="option-group">
-            <label class="option-label"><span class="material-icons">format_paint</span>채우기</label>
-            <div class="color-picker-container" id="fill-picker-container">
-                <div class="color-picker-btn" id="fill-color-btn" title="채우기 색상 선택">
-                    <div class="color-preview" id="fill-color-preview"></div>
-                    <span class="material-icons mixed-icon" id="fill-mixed-icon" style="display:none;">question_mark</span>
+        <!-- [신규] 텍스트 도구 전용 옵션 바 -->
+        <div id="header-text-options">
+            <div id="text-only-options" style="display: flex; align-items: center; gap: 15px;">
+                <div class="option-group">
+                    <span class="material-icons" style="color:#aaa; font-size:20px;">text_fields</span>
+                    <input type="text" id="text-content-input" placeholder="텍스트 입력 (엔터시 줄바꿈)" style="width: 200px;">
                 </div>
-                <div class="color-popover" id="fill-popover">
-                    <div class="popover-row"><input type="color" id="fill-native-picker"><input type="text" id="fill-text-input" placeholder="rgba(r, g, b, a)"></div>
-                    <div class="popover-row"><span class="alpha-label">Alpha</span><input type="range" id="fill-alpha-slider" min="0" max="1" step="0.01" value="0.2"><span class="alpha-val" id="fill-alpha-val">20%</span></div>
-                    <label class="checkbox-label"><input type="checkbox" id="fill-transparent-chk">완전 투명</label>
-                    <div class="recent-colors-title">최근 사용된 색상</div><div class="recent-colors" id="fill-recent-colors"></div>
+                
+                <div class="option-group">
+                    <label class="option-label">크기</label>
+                    <!-- [수정] 텍스트 크기 기본값을 18로 변경 -->
+                    <input type="number" id="text-size-input" value="18" min="1" max="200" style="width: 50px;">
+                </div>
+
+                <div class="option-group">
+                    <label class="option-label">색상</label>
+                    <div class="color-picker-container" id="text-picker-container">
+                        <div class="color-picker-btn" id="text-color-btn" title="글자 색상 선택">
+                            <div class="color-preview" id="text-color-preview"></div>
+                            <span class="material-icons mixed-icon" id="text-mixed-icon" style="display:none;">question_mark</span>
+                        </div>
+                        <div class="color-popover" id="text-popover">
+                            <div class="popover-row"><input type="color" id="text-native-picker"><input type="text" id="text-text-input" placeholder="rgba(r, g, b, a)"></div>
+                            <div class="popover-row"><span class="alpha-label">Alpha</span><input type="range" id="text-alpha-slider" min="0" max="1" step="0.01" value="1"><span class="alpha-val" id="text-alpha-val">100%</span></div>
+                            <label class="checkbox-label"><input type="checkbox" id="text-transparent-chk">완전 투명</label>
+                            <div class="recent-colors-title">최근 사용된 색상</div><div class="recent-colors" id="text-recent-colors"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="option-group btn-group">
+                    <button class="text-style-btn" id="btn-text-bold" title="굵게"><span class="material-icons">format_bold</span></button>
+                    <button class="text-style-btn" id="btn-text-italic" title="기울임"><span class="material-icons">format_italic</span></button>
+                    <button class="text-style-btn" id="btn-text-underline" title="밑줄"><span class="material-icons">format_underlined</span></button>
+                </div>
+
+                <div class="option-group btn-group">
+                    <button class="text-style-btn" id="btn-align-left" title="왼쪽 정렬"><span class="material-icons">format_align_left</span></button>
+                    <button class="text-style-btn active" id="btn-align-center" title="가운데 정렬"><span class="material-icons">format_align_center</span></button>
+                    <button class="text-style-btn" id="btn-align-right" title="오른쪽 정렬"><span class="material-icons">format_align_right</span></button>
+                </div>
+                
+                <div class="option-group btn-group">
+                    <button class="text-style-btn" id="btn-valign-top" title="위쪽 정렬"><span class="material-icons">vertical_align_top</span></button>
+                    <button class="text-style-btn active" id="btn-valign-middle" title="가운데 정렬"><span class="material-icons">vertical_align_center</span></button>
+                    <button class="text-style-btn" id="btn-valign-bottom" title="아래쪽 정렬"><span class="material-icons">vertical_align_bottom</span></button>
                 </div>
             </div>
-        </div>
-
-        <!-- [신규 기능] 전체/개별 도형 투명도 조절 UI 추가 -->
-        <div class="option-group">
-            <label class="option-label"><span class="material-icons">opacity</span>투명도</label>
-            <input type="range" id="opacity-slider" min="0" max="1" step="0.05" value="1" style="width: 70px; cursor: pointer; accent-color: #0066cc;">
-            <span id="opacity-val" style="font-size: 12px; color: #ddd; width: 35px;">100%</span>
-        </div>
-
-        <div class="option-group">
-            <label class="option-label"><span class="material-icons">description</span>용지</label>
-            <select id="canvas-size-preset">
-                <option value="fit">화면 맞춤</option>
-                <optgroup label="A4"><option value="A4_P">A4 세로 (210x297mm)</option><option value="A4_L">A4 가로 (297x210mm)</option></optgroup>
-                <optgroup label="A3"><option value="A3_P">A3 세로 (297x420mm)</option><option value="A3_L">A3 가로 (420x297mm)</option></optgroup>
-                <optgroup label="B4"><option value="B4_P">B4 세로 (257x364mm)</option><option value="B4_L">B4 가로 (364x257mm)</option></optgroup>
-                <option value="custom">직접 입력</option>
-            </select>
-        </div>
-        <div id="custom-size-controls" class="option-group custom-size-inputs">
-            <input type="number" id="custom-width" placeholder="너비(px)" value="800">
-            <span>x</span>
-            <input type="number" id="custom-height" placeholder="높이(px)" value="600">
-        </div>
-        
-        <div style="flex: 1;"></div>
-        
-        <!-- [신규 기능] 이미지 업로드 버튼 (클립보드도 지원) -->
-        <div class="option-group">
-            <button class="btn-upload" id="btn-upload-image" title="로컬 이미지 불러오기 (클립보드 Ctrl+V 지원)">
-                <span class="material-icons">image_search</span>이미지 삽입
-            </button>
-            <input type="file" id="image-upload-input" accept="image/*" style="display:none;">
-        </div>
-
-        <div class="option-group">
-            <button class="btn-export" id="btn-export-svg"><span class="material-icons">file_download</span>SVG</button>
-            <button class="btn-export png" id="btn-export-png"><span class="material-icons">image</span>PNG</button>
+            
+            <div style="flex: 1;"></div>
+            
+            <div class="option-group" style="border-left: 1px solid #444; padding-left: 15px;">
+                <span id="shape-info-label" style="font-size: 13px; color: #4fc3f7; font-weight: bold; width: 60px; text-align: center;">선택 없음</span>
+                <label class="option-label" style="margin-left:5px;">X</label>
+                <input type="number" id="shape-pos-x" style="width: 60px;" disabled>
+                <label class="option-label">Y</label>
+                <input type="number" id="shape-pos-y" style="width: 60px;" disabled>
+            </div>
         </div>
     </div>
     
     <div id="main-container">
         <!-- 1. 좌측 툴바 영역 -->
         <div id="sidebar">
-            <button class="tool-btn active" id="tool-select" title="선택 (S)">선택</button>
-            <button class="tool-btn" id="tool-line" title="선 (L)">선</button>
-            <button class="tool-btn" id="tool-multiline" title="연속선 (P)">연속선</button>
-            <button class="tool-btn" id="tool-rect" title="사각형 (R)">사각</button>
-            <button class="tool-btn" id="tool-circle" title="원 (C)">원</button>
+            <button class="tool-btn active" id="tool-select" title="선택 (S)"><span class="material-icons">near_me</span>선택</button>
+            <button class="tool-btn" id="tool-line" title="선 (L)"><span class="material-icons">remove</span>직선</button>
+            <button class="tool-btn" id="tool-multiline" title="연속선 (P)"><span class="material-icons">show_chart</span>다중선</button>
+            <button class="tool-btn" id="tool-rect" title="사각형 (R)"><span class="material-icons">crop_square</span>사각</button>
+            <button class="tool-btn" id="tool-circle" title="원 (C)"><span class="material-icons">radio_button_unchecked</span>원형</button>
+            <!-- [신규] 텍스트 도구 버튼 추가 -->
+            <button class="tool-btn" id="tool-text" title="텍스트 (T)"><span class="material-icons">text_fields</span>텍스트</button>
+            
             <button class="tool-btn" id="tool-image" title="이미지 (I)" style="display:none;">이미지</button>
         </div>
         

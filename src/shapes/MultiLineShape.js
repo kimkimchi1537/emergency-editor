@@ -69,6 +69,26 @@ export class MultiLineShape extends BaseShape {
 
     resize(handleIndex, newX, newY, isShift = false) {
         if (handleIndex >= 0 && handleIndex < this.points.length) {
+            // Shift 키를 누르면 직전 점(또는 다음 점)을 기준으로 45도 스냅 적용
+            if (isShift) {
+                let oppIndex = handleIndex - 1;
+                if (oppIndex < 0) oppIndex = 1; // 0번 핸들을 움직일 땐 1번이 기준점
+                
+                if (oppIndex >= 0 && oppIndex < this.points.length) {
+                    const oppX = this.points[oppIndex].x;
+                    const oppY = this.points[oppIndex].y;
+                    
+                    const dx = newX - oppX;
+                    const dy = newY - oppY;
+                    const angle = Math.atan2(dy, dx);
+                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    newX = oppX + dist * Math.cos(snapAngle);
+                    newY = oppY + dist * Math.sin(snapAngle);
+                }
+            }
+
             this.points[handleIndex].x = newX;
             this.points[handleIndex].y = newY;
             this.updateAttributes();

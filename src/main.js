@@ -1,26 +1,36 @@
 import { ShortcutManager } from './managers/ShortcutManager.js';
 import { ZoomManager } from './managers/ZoomManager.js';
 import { ColorManager } from './managers/ColorManager.js';
-import { LayerManager } from './managers/LayerManager.js'; // [추가]
+import { LayerManager } from './managers/LayerManager.js';
 import { SelectTool } from './tools/SelectTool.js';
 import { MultiLineTool } from './tools/MultiLineTool.js';
 import { LineTool } from './tools/LineTool.js';
 import { RectTool } from './tools/RectTool.js';
 import { CircleTool } from './tools/CircleTool.js';
-import { ImageTool } from './tools/ImageTool.js'; // [추가]
+import { ImageTool } from './tools/ImageTool.js';
+import { TextTool } from './tools/TextTool.js'; 
 import { ShapeFactory } from './factory/ShapeFactory.js';
 import { HistoryManager } from './managers/HistoryManager.js';
-
-console.log("[SYSTEM] Main Entry 진입 - 레이어 및 이미지 삽입 시스템 연동 시작");
 
 const state = {
     currentTool: 'select',
     currentStrokeWidth: 4,
     currentStrokeColor: '#e63946',
     currentFillColor: 'rgba(52, 152, 219, 1.0)', 
-    currentOpacity: 1.0, // [신규] 전역 투명도 속성
+    currentOpacity: 1.0,
     currentSizePreset: 'fit',
-    pendingImageUrl: null, // [신규] 클립보드/업로드 이미지 대기열
+    pendingImageUrl: null,
+    
+    currentTextSize: 18,
+    currentTextColor: '#000000',
+    currentTextBold: false,
+    currentTextItalic: false,
+    currentTextUnderline: false,
+    currentTextAlign: 'center',
+    currentTextVAlign: 'middle',
+    
+    isSnapEnabled: true, // [신규] 자석(스냅) 기능 상태 (기본값 true)
+    
     isDrawing: false,
     startX: 0,
     startY: 0,
@@ -30,7 +40,7 @@ const state = {
     shapes: [],
     activeTool: null,
     setTool: null,
-    renderLayers: null, // [신규] 전역 레이어 렌더링 훅
+    renderLayers: null,
     requestSelection: function(shape) {
         this.selectionQueue.push(shape);
     }
@@ -51,12 +61,11 @@ const sizePresetSelect = document.getElementById('canvas-size-preset');
 const customSizeControls = document.getElementById('custom-size-controls');
 const customWidthInput = document.getElementById('custom-width');
 const customHeightInput = document.getElementById('custom-height');
-const layerListContainer = document.getElementById('layer-list'); // [추가]
+const layerListContainer = document.getElementById('layer-list');
 
 const colorManager = new ColorManager(state, workspace);
 state.colorManager = colorManager;
 
-// [신규] 레이어 매니저 초기화 및 훅 등록
 const layerManager = new LayerManager(state, workspace, layerListContainer);
 state.renderLayers = () => layerManager.render();
 
@@ -66,7 +75,8 @@ const tools = {
     'rect': new RectTool(state, workspace, shapeIdCounter),
     'circle': new CircleTool(state, workspace, shapeIdCounter),
     'multiline': new MultiLineTool(state, workspace, shapeIdCounter),
-    'image': new ImageTool(state, workspace, shapeIdCounter) // [신규]
+    'image': new ImageTool(state, workspace, shapeIdCounter),
+    'text': new TextTool(state, workspace, shapeIdCounter) 
 };
 
 function setTool(toolId) {
@@ -83,6 +93,15 @@ function setTool(toolId) {
     if (state.activeTool && typeof state.activeTool.onActivate === 'function') {
         state.activeTool.onActivate();
     }
+    
+    const textOnlyOptions = document.getElementById('text-only-options');
+    if (textOnlyOptions) {
+        if (toolId === 'text' || (toolId === 'select' && state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text')) {
+            textOnlyOptions.style.display = 'flex';
+        } else {
+            textOnlyOptions.style.display = 'none';
+        }
+    }
 }
 
 state.setTool = setTool;
@@ -93,6 +112,7 @@ shortcutManager.register('l', () => setTool('line'));
 shortcutManager.register('r', () => setTool('rect'));
 shortcutManager.register('c', () => setTool('circle'));
 shortcutManager.register('p', () => setTool('multiline'));
+shortcutManager.register('t', () => setTool('text')); 
 shortcutManager.register('i', () => {
     if(state.pendingImageUrl) setTool('image');
     else document.getElementById('image-upload-input').click();
@@ -133,14 +153,13 @@ window.addEventListener('resize', () => zoomManager.fitToScreen());
 
 updateCanvasSize();
 setTool('select');
-state.renderLayers(); // 최초 빈 레이어 목록 렌더링
+state.renderLayers(); 
 
 sidebar.addEventListener('click', (e) => {
     const btn = e.target.closest('.tool-btn');
     if (btn) setTool(btn.id.replace('tool-', ''));
 });
 
-// [수정] 선 굵기 변경 시 선택된 도형에 양방향 실시간 동기화
 strokeWidthInput.addEventListener('change', (e) => {
     const newWidth = parseInt(e.target.value, 10) || 4;
     state.currentStrokeWidth = newWidth;
@@ -156,7 +175,6 @@ strokeWidthInput.addEventListener('change', (e) => {
                         shape.element.setAttribute('stroke-width', newWidth);
                     }
                 } else if (shape.type === 'group') {
-                    // 그룹 안에 있는 도형들도 모두 찾아서 일괄 선 굵기 변경
                     const updateGroupStroke = (grp) => {
                         grp.children.forEach(child => {
                             if (child.type === 'group') updateGroupStroke(child);
@@ -169,12 +187,10 @@ strokeWidthInput.addEventListener('change', (e) => {
                     updateGroupStroke(shape);
                 }
             });
-            console.log(`[SYSTEM] 선택된 도형 선 굵기 일괄 변경 완료: ${newWidth}`);
         });
     }
 });
 
-// [신규] 불투명도 조절 이벤트 연동
 const opacitySlider = document.getElementById('opacity-slider');
 const opacityVal = document.getElementById('opacity-val');
 opacitySlider.addEventListener('input', (e) => {
@@ -182,13 +198,11 @@ opacitySlider.addEventListener('input', (e) => {
     opacityVal.textContent = Math.round(val * 100) + '%';
     state.currentOpacity = val;
     
-    // 선택된 도형이 있다면 즉시 적용
     if (state.selectedShapes.length > 0) {
         state.selectedShapes.forEach(s => s.setOpacity(val));
     }
 });
 opacitySlider.addEventListener('change', (e) => {
-    // 마우스를 뗄 때 히스토리 저장
     if (state.selectedShapes.length > 0) {
         import('./managers/HistoryManager.js').then(({HistoryManager}) => {
             HistoryManager.getInstance(state, workspace).saveState();
@@ -197,9 +211,130 @@ opacitySlider.addEventListener('change', (e) => {
     }
 });
 
+const textInputEl = document.getElementById('text-content-input');
+const textSizeEl = document.getElementById('text-size-input');
+
+textInputEl.addEventListener('input', (e) => {
+    if(state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text') {
+        state.selectedShapes[0].textProps.content = e.target.value;
+        state.selectedShapes[0].applyTextProps();
+    }
+});
+textInputEl.addEventListener('change', (e) => {
+    if(state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text') {
+        import('./managers/HistoryManager.js').then(({HistoryManager}) => HistoryManager.getInstance(state, workspace).saveState());
+    }
+});
+
+textSizeEl.addEventListener('change', (e) => {
+    const val = parseInt(e.target.value, 10) || 20;
+    state.currentTextSize = val;
+    if(state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text') {
+        import('./managers/HistoryManager.js').then(({HistoryManager}) => {
+            HistoryManager.getInstance(state, workspace).saveState();
+            state.selectedShapes[0].textProps.fontSize = val;
+            state.selectedShapes[0].applyTextProps();
+        });
+    }
+});
+
+function setupTextToggle(btnId, stateProp, trueVal, falseVal, propName) {
+    const btn = document.getElementById(btnId);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        const isActive = btn.classList.contains('active');
+        const newVal = isActive ? falseVal : trueVal;
+        if(isActive) btn.classList.remove('active'); else btn.classList.add('active');
+        
+        state[stateProp] = !isActive;
+        if(state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text') {
+            import('./managers/HistoryManager.js').then(({HistoryManager}) => {
+                HistoryManager.getInstance(state, workspace).saveState();
+                state.selectedShapes[0].textProps[propName] = newVal;
+                state.selectedShapes[0].applyTextProps();
+            });
+        }
+    });
+}
+
+function setupTextRadio(btnIds, stateProp, values, propName) {
+    btnIds.forEach((id, index) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.addEventListener('click', () => {
+            btnIds.forEach(bId => document.getElementById(bId).classList.remove('active'));
+            btn.classList.add('active');
+            
+            const val = values[index];
+            state[stateProp] = val;
+            if(state.selectedShapes.length === 1 && state.selectedShapes[0].type === 'text') {
+                import('./managers/HistoryManager.js').then(({HistoryManager}) => {
+                    HistoryManager.getInstance(state, workspace).saveState();
+                    state.selectedShapes[0].textProps[propName] = val;
+                    state.selectedShapes[0].applyTextProps();
+                });
+            }
+        });
+    });
+}
+
+setupTextToggle('btn-text-bold', 'currentTextBold', 'bold', 'normal', 'fontWeight');
+setupTextToggle('btn-text-italic', 'currentTextItalic', 'italic', 'normal', 'fontStyle');
+setupTextToggle('btn-text-underline', 'currentTextUnderline', 'underline', 'none', 'textDecoration');
+
+setupTextRadio(['btn-align-left', 'btn-align-center', 'btn-align-right'], 'currentTextAlign', ['left', 'center', 'right'], 'textAlign');
+setupTextRadio(['btn-valign-top', 'btn-valign-middle', 'btn-valign-bottom'], 'currentTextVAlign', ['top', 'middle', 'bottom'], 'verticalAlign');
+
+// [신규] 스냅 토글 체크박스 이벤트 연결
+const snapToggleChk = document.getElementById('snap-toggle-chk');
+if (snapToggleChk) {
+    snapToggleChk.addEventListener('change', (e) => {
+        state.isSnapEnabled = e.target.checked;
+    });
+}
+
+['shape-pos-x', 'shape-pos-y'].forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', (e) => {
+        if (state.selectedShapes.length === 1) {
+            import('./managers/HistoryManager.js').then(({HistoryManager}) => {
+                HistoryManager.getInstance(state, workspace).saveState();
+                
+                const shape = state.selectedShapes[0];
+                let minX = Infinity, minY = Infinity;
+                shape.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); });
+                if(minX === Infinity) minX = 0;
+                if(minY === Infinity) minY = 0;
+                
+                const newX = parseFloat(document.getElementById('shape-pos-x').value);
+                const newY = parseFloat(document.getElementById('shape-pos-y').value);
+                
+                if (!isNaN(newX) && !isNaN(newY)) {
+                    const dx = newX - minX;
+                    const dy = newY - minY;
+                    shape.move(dx, dy);
+                    
+                    if (state.activeTool && typeof state.activeTool.renderSelectionUI === 'function') {
+                        state.activeTool.renderSelectionUI();
+                    }
+                }
+            });
+        }
+    });
+});
+
 workspace.addEventListener('mousedown', (e) => { if (state.activeTool) state.activeTool.onMouseDown(e); });
 workspace.addEventListener('mousemove', (e) => { if (state.activeTool) state.activeTool.onMouseMove(e); });
 workspace.addEventListener('mouseup', (e) => { if (state.activeTool) state.activeTool.onMouseUp(e); });
+
+// [신규] 더블 클릭을 하위 툴로 연결하여 텍스트 에디터를 열도록 처리
+workspace.addEventListener('dblclick', (e) => {
+    if (state.activeTool && typeof state.activeTool.onDoubleClick === 'function') {
+        state.activeTool.onDoubleClick(e);
+    }
+});
+
 workspace.addEventListener('contextmenu', (e) => {
     e.preventDefault(); if (state.activeTool && typeof state.activeTool.onContextMenu === 'function') state.activeTool.onContextMenu(e);
 });
@@ -209,7 +344,6 @@ document.addEventListener('mousedown', (e) => {
 });
 
 
-// [신규] 이미지 업로드 프로세스 (버튼 및 파일 입력)
 const btnUploadImage = document.getElementById('btn-upload-image');
 const imageUploadInput = document.getElementById('image-upload-input');
 const toolImageBtn = document.getElementById('tool-image');
@@ -219,11 +353,12 @@ btnUploadImage.addEventListener('click', () => imageUploadInput.click());
 imageUploadInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) loadFileAsImage(file);
-    e.target.value = ''; // 초기화
+    e.target.value = ''; 
 });
 
-// [신규] 클립보드 붙여넣기 (Ctrl+V) 감지
 window.addEventListener('paste', (e) => {
+    if (document.activeElement.tagName === 'INPUT' || document.activeElement.isContentEditable) return;
+    
     console.log(`[SYSTEM] 클립보드 붙여넣기(Paste) 이벤트 감지`);
     const items = e.clipboardData.items;
     for (let i = 0; i < items.length; i++) {
@@ -247,14 +382,12 @@ function loadFileAsImage(file) {
             const canvasW = parseFloat(workspace.getAttribute('width')) || 800;
             const canvasH = parseFloat(workspace.getAttribute('height')) || 600;
             
-            // [핵심] 원본 비율을 유지하면서 캔버스 크기를 넘지 않도록 자동 축소 보정
             if (w > canvasW || h > canvasH) {
                 const ratio = Math.min(canvasW / w, canvasH / h);
                 w *= ratio;
                 h *= ratio;
             }
             
-            // 캔버스 정중앙 배치 좌표 계산
             const startX = (canvasW - w) / 2;
             const startY = (canvasH - h) / 2;
             
@@ -272,11 +405,10 @@ function loadFileAsImage(file) {
                 { 
                     imageUrl: imgUrl, 
                     opacity: state.currentOpacity,
-                    originalRatio: img.naturalWidth / img.naturalHeight // [신규] 원본 비율 데이터 추가
+                    originalRatio: img.naturalWidth / img.naturalHeight 
                 }
             );
             
-            // 계산된 크기와 위치로 이미지 폴리곤 포인트 강제 갱신
             shape.points[0] = {x: startX, y: startY};
             shape.points[1] = {x: startX + w, y: startY};
             shape.points[2] = {x: startX + w, y: startY + h};
@@ -286,12 +418,10 @@ function loadFileAsImage(file) {
             workspace.appendChild(shape.element);
             state.shapes.push(shape);
             
-            // 이미지 삽입 직후 Select(선택) 툴로 자동 전환 및 포커스
             state.requestSelection(shape);
             setTool('select');
             
             if (state.renderLayers) state.renderLayers();
-            console.log(`[SYSTEM] 이미지 자동 삽입 완료 | 원본비율 유지 크기: ${w}x${h}`);
         };
         img.src = imgUrl;
     };
@@ -314,6 +444,7 @@ document.getElementById('btn-export-png').addEventListener('click', () => {
     if (viewBox) { const parts = viewBox.split(' '); w = parseFloat(parts[2]); h = parseFloat(parts[3]); }
     const oldWidth = workspace.getAttribute('width'); const oldHeight = workspace.getAttribute('height');
     workspace.setAttribute('width', w); workspace.setAttribute('height', h);
+    
     const svgData = new XMLSerializer().serializeToString(workspace);
     workspace.setAttribute('width', oldWidth); workspace.setAttribute('height', oldHeight);
     const canvas = document.createElement("canvas"); const ctx = canvas.getContext("2d"); const img = new Image();

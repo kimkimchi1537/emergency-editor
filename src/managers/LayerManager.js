@@ -13,7 +13,8 @@ export class LayerManager {
             'line': 'remove',
             'multiline': 'show_chart',
             'image': 'image',
-            'group': 'workspaces'
+            'group': 'workspaces',
+            'text': 'text_fields' // [추가]
         };
 
         this.nameMap = {
@@ -22,7 +23,8 @@ export class LayerManager {
             'line': '직선',
             'multiline': '연속선',
             'image': '이미지',
-            'group': '그룹'
+            'group': '그룹',
+            'text': '텍스트' // [추가]
         };
         console.log(`[CLASS LayerManager] 생성자 호출 완료`);
     }
@@ -265,7 +267,6 @@ export class LayerManager {
                     this.state.activeTool.renderSelectionUI();
                 }
                 
-                // [신규] 선택 시 색상 및 선 굵기 UI 동기화
                 if (this.state.colorManager) this.state.colorManager.updateUI(this.state.selectedShapes);
                 
                 if (this.state.selectedShapes.length === 1) {
@@ -275,6 +276,11 @@ export class LayerManager {
                         this.state.currentStrokeWidth = this.state.selectedShapes[0].strokeWidth;
                         console.log(`[LAYER-MANAGER] 📏 선 굵기 UI 동기화 완료: ${this.state.currentStrokeWidth}`);
                     }
+                }
+                
+                // [신규] SelectTool 내장 syncStateUI()로 위임하여 텍스트 패널도 동기화
+                if (this.state.activeTool && typeof this.state.activeTool.syncStateUI === 'function') {
+                    this.state.activeTool.syncStateUI();
                 }
 
                 this.render(); 

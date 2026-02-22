@@ -45,6 +45,22 @@ export class LineShape extends BaseShape {
     }
 
     resize(handleIndex, newX, newY, isShift = false) {
+        // Shift 키를 누르면 반대편 점을 기준으로 45도 각도 스냅 적용
+        if (isShift) {
+            const oppIndex = handleIndex === 0 ? 1 : 0;
+            const oppX = this.points[oppIndex].x;
+            const oppY = this.points[oppIndex].y;
+            
+            const dx = newX - oppX;
+            const dy = newY - oppY;
+            const angle = Math.atan2(dy, dx);
+            const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            newX = oppX + dist * Math.cos(snapAngle);
+            newY = oppY + dist * Math.sin(snapAngle);
+        }
+
         this.points[handleIndex].x = newX;
         this.points[handleIndex].y = newY;
         this.updateAttributes();
